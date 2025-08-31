@@ -1,4 +1,5 @@
 import fastapi
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import create_engine, Column, String, Integer
 from sqlalchemy.orm import sessionmaker, Session, declarative_base
 import os
@@ -22,6 +23,14 @@ class LoginRequest(BaseModel):
 
 # Fastapi
 app = fastapi.FastAPI()
+# Добавляем CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Разрешаем все домены для разработки
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 # database
 # SQLite подключение (по умолчанию)
@@ -72,8 +81,8 @@ def login(request: LoginRequest, db: Session = fastapi.Depends(get_db)):
         logger.warning(f"User not found: {request.login}")
         return {"success": False, "message": "Invalid credentials"}
     
-    # request.password уже приходит захешированным, сравниваем напрямую
-    if request.password != user.password_hash:
+    # Хешируем пришедший пароль и сравниваем с хешем из БД
+    if not verify_password(request.password, user.password_hash):
         logger.warning(f"Invalid password for user: {request.login}")
         return {"success": False, "message": "Invalid credentials"}
     
