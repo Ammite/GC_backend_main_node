@@ -5,6 +5,11 @@ import os
 import hashlib
 import logging
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DB_URL")
 
 # Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,7 +26,6 @@ app = fastapi.FastAPI()
 # database
 # SQLite подключение (по умолчанию)
 os.makedirs("database", exist_ok=True)
-DATABASE_URL = "sqlite:///./database/metrics.db"
 
 # PostgreSQL подключение (раскомментировать для использования PostgreSQL)
 # DATABASE_URL = "postgresql://username:password@localhost:5432/database_name"
