@@ -4,6 +4,7 @@ from datetime import timedelta
 from utils.security import hash_password, verify_password, create_access_token
 from database.database import get_db
 from models import User
+from models.role import Role
 from schemas.auth import LoginRequest, LoginResponse
 import logging
 
@@ -23,12 +24,15 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         expires_delta=timedelta(minutes=30),
     )
 
+    # Берём первую роль пользователя (если их несколько) для ответа
+    first_role = user.roles[0].name if user.roles else None
     return {
         "success": True,
         "message": "Login successful",
         "user_id": user.id,
         "access_token": access_token,
         "token_type": "bearer",
+        "role": first_role,
     }
 
 @router.post("/register", response_model=LoginResponse)
@@ -39,6 +43,10 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
 
     hashed_password = hash_password(request.password)
     new_user = User(login=request.login, password_hash=hashed_password)
+    # Назначаем роль "Официант"
+    waiter_role = db.query(Role).filter(Role.code == "waiter").first()
+    if waiter_role:
+        new_user.roles.append(waiter_role)
 
     db.add(new_user)
     db.commit()
@@ -49,10 +57,12 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
         expires_delta=timedelta(minutes=30),
     )
 
+    first_role = new_user.roles[0].name if new_user.roles else None
     return {
         "success": True,
         "message": "User registered successfully",
         "user_id": new_user.id,
         "access_token": access_token,
         "token_type": "bearer",
+        "role": first_role,
     }
