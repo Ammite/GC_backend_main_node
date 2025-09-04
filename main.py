@@ -1,67 +1,62 @@
 import fastapi
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Integer
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-import os
-import hashlib
 import logging
-from pydantic import BaseModel
-from dotenv import load_dotenv
+import importlib
+import pkgutil
+from contextlib import asynccontextmanager
+from database.database import init_db
 
-load_dotenv()
 
-DATABASE_URL = os.getenv("DB_URL")
-
-# Logging
+# Логирование
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Автоматичкски инициализирует нужные файлы (бд, рауты)
+@asynccontextmanager
+async def lifespan(application: fastapi.FastAPI):
+    init_db()
+    include_routers(application)
+    yield
 
-# Fastapi
-app = fastapi.FastAPI()
-# Добавляем CORS middleware
+# Приложение FastAPI
+app = fastapi.FastAPI(lifespan=lifespan)
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешаем все домены для разработки
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
-# database
-# SQLite подключение (по умолчанию)
-os.makedirs("database", exist_ok=True)
 
-# PostgreSQL подключение (раскомментировать для использования PostgreSQL)
-# DATABASE_URL = "postgresql://username:password@localhost:5432/database_name"
-# Пример: DATABASE_URL = "postgresql://myuser:mypass@localhost:5432/gruzin_cuisine"
-
-# Создаем engine с разными параметрами для SQLite и PostgreSQL
-if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-else:
-    # Для PostgreSQL не нужен check_same_thread
-    engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-
-Base.metadata.create_all(bind=engine)
-
-def get_db():
-    db = SessionLocal()
+def include_routers(application: fastapi.FastAPI) -> None:
+    # Автоматически подключаем все роутеры из пакета routers
     try:
-        yield db
-    finally:
-        db.close()
+        import routers
+    except ImportError:
+        logger.warning("Пакет routers не найден")
+        return
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    package = importlib.import_module("routers")
+    for finder, name, ispkg in pkgutil.walk_packages(package.__path__, package.__name__ + "."):
+        if name.endswith(".auth.auth") or name.endswith(".auth"):
+            # поддержка текущей структуры routers/auth/auth.py
+            module_name = name
+        else:
+            module_name = name
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as e:
+            logger.warning(f"Не удалось импортировать модуль {module_name}: {e}")
+            continue
 
-def verify_password(password: str, hashed_password: str) -> bool:
-    return hash_password(password) == hashed_password
+        router = getattr(module, "router", None)
+        if router is not None:
+            application.include_router(router)
 
 
+# Точка входа для локального запуска, в будущем будем менять тут настройки
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8008)

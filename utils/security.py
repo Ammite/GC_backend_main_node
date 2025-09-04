@@ -1,14 +1,12 @@
 import hashlib
 from datetime import datetime, timedelta
 from jose import jwt
-from dotenv import load_dotenv
-import os
+import config
 
-load_dotenv()
 
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "changeme")
-JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+JWT_SECRET_KEY = config.JWT_SECRET_KEY
+JWT_ALGORITHM = config.JWT_ALGORITHM
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()

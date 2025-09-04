@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from datetime import timedelta
-
 from utils.security import hash_password, verify_password, create_access_token
-from database import get_db
+from database.database import get_db
 from models import User
 from schemas.auth import LoginRequest, LoginResponse
-
 import logging
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
