@@ -11,3 +11,4 @@ class LoginResponse(BaseModel):
     user_id: int | None = None
     access_token: str | None = None
     token_type: str | None = None
+    role: str | None = None
