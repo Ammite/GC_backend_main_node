@@ -56,6 +56,7 @@ def include_routers(application: fastapi.FastAPI) -> None:
             application.include_router(router)
 
 
+
 # Точка входа для локального запуска, в будущем будем менять тут настройки
 if __name__ == "__main__":
     import uvicorn
