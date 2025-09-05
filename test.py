@@ -68,7 +68,55 @@ def main() -> int:
         return 1
 
     print("Тест пройден: регистрация и авторизация работают.")
+    
+    order_url = f"{base_url}/orders"
+    try:
+        r = requests.get(order_url, timeout=10)
+    except Exception as e:
+        print(f"Ошибка запроса к {order_url}: {e}")
+        return 1
+
+    print(f"/order_url -> статус {r.status_code}")
+    try:
+        reg_data = r.json()
+    except json.JSONDecodeError:
+        print("Некорректный JSON в ответе order_url")
+        return 1
+    print("Ответ order_url:", reg_data)
+
+    menu_url = f"{base_url}/menu"
+    try:
+        r = requests.get(menu_url, timeout=10)
+    except Exception as e:
+        print(f"Ошибка запроса к {menu_url}: {e}")
+        return 1
+
+    print(f"/menu_url -> статус {r.status_code}")
+    try:
+        reg_data = r.json()
+    except json.JSONDecodeError:
+        print("Некорректный JSON в ответе menu_url")
+        return 1
+    print("Ответ menu_url:", reg_data)
+
+    users_url = f"{base_url}/users"
+    try:
+        r = requests.get(users_url, timeout=10)
+    except Exception as e:
+        print(f"Ошибка запроса к {users_url}: {e}")
+        return 1
+
+    print(f"/users_url -> статус {r.status_code}")
+    try:
+        reg_data = r.json()
+    except json.JSONDecodeError:
+        print("Некорректный JSON в ответе users_url")
+        return 1
+    print("Ответ users_url:", reg_data)
+
+    
     return 0
+
 
 
 if __name__ == "__main__":
