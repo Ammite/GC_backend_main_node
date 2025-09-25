@@ -7,9 +7,9 @@ class Reward(Base):
     __tablename__ = "rewards"
 
     id = Column(Integer, primary_key=True, index=True)
-    createddate = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    startdate = Column(TIMESTAMP, nullable=False)
-    enddate = Column(TIMESTAMP, nullable=False)
-    itemid = Column(Integer, ForeignKey("items.id"), nullable=False)
-    endgoal = Column(Integer, nullable=False)
-    prizesum = Column(Integer, nullable=False)
+    create_ddate = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    start_date = Column(TIMESTAMP, nullable=False)
+    end_date = Column(TIMESTAMP, nullable=False)
+    item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    end_goal = Column(Integer, nullable=False)
+    prize_sum = Column(Integer, nullable=False)

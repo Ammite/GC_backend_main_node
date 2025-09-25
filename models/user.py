@@ -9,4 +9,4 @@ class User(Base):
     name = Column(String(100), nullable=False)
     login = Column(String(100), unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
-    role_id = Column(Integer, ForeignKey("roles.id"))
+    roles_id = Column(Integer, ForeignKey("roles.id"))
