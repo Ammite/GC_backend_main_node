@@ -1,10 +1,10 @@
-from sqlalchemy import Column, Integer, String, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from database.database import Base
 
 
-class AttendanceType(Base):
-    __tablename__ = "attendance_types"
+class ScheduleType(Base):
+    __tablename__ = "schedule_types"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(UUID(as_uuid=True), unique=True, nullable=False)
@@ -12,5 +12,8 @@ class AttendanceType(Base):
     code = Column(String(50), nullable=False)
     name = Column(String(100), nullable=False)
 
-    pay_rate = Column(Numeric(10, 2), default=1.0)
-    status = Column(Boolean, default=True)
+    start_time = Column(String(10), nullable=True)
+    length_minutes = Column(Integer, nullable=True)
+    comment = Column(String(255), nullable=True)
+
+    overtime = Column(Boolean, default=False)

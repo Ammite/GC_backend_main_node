@@ -11,9 +11,8 @@ class Shift(Base):
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     end_time = Column(TIMESTAMP, nullable=False)
 
-    role_id = Column(Integer, ForeignKey("roles.id"))
-    user_id = Column(Integer, ForeignKey("users.id"))
-
-    schedule_type_id = Column(Integer, ForeignKey("schedule_types.id"))
+    roles_id = Column(Integer, ForeignKey("roles.id"))
 
     attendance_type_id = Column(Integer, ForeignKey("attendance_types.id"))
+
+    employee_id = Column(Integer, ForeignKey("employees.id"))
