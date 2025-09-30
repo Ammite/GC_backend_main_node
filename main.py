@@ -1,9 +1,11 @@
 import fastapi
+from fastapi import Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import importlib
 import pkgutil
 from contextlib import asynccontextmanager
+import config
 from database.database import init_db
 
 
@@ -28,6 +30,21 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def check_token(request: Request, call_next):
+    token = request.headers.get("Authorization")
+    if token and token.startswith("Bearer "):
+        token = token.split(" ")[1]
+    else:
+        token = request.query_params.get("token")
+
+    if token != config.API_VALID_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+
+    response = await call_next(request)
+    return response
 
 
 def include_routers(application: fastapi.FastAPI) -> None:
