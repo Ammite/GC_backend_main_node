@@ -10,13 +10,13 @@ class Order(Base):
     iiko_id = Column(String(50), unique=True, nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"))
     organization = relationship("Organization", back_populates="orders")
-    terminal_group_id = Column(String(50), nullable=True)
+    terminal_group_id = Column(Integer, ForeignKey("terminal_groups.id"), nullable=True)
     external_number = Column(String(100), nullable=True)
     phone = Column(String(50), nullable=True)
     guest_count = Column(Integer, default=0)
     tab_name = Column(String(100), nullable=True)
     price_category_id = Column(String(50), nullable=True)
-    order_type_id = Column(String(50), ForeignKey("order_types.iiko_id"), nullable=True)
+    order_type_id = Column(Integer, ForeignKey("order_types.id"), nullable=True)
 
 
     order_type = relationship("OrderType")

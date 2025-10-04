@@ -3,8 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import timedelta
 from utils.security import hash_password, verify_password, create_access_token
 from database.database import get_db
-from models import User
-from models.role import Role
+from models import User, Roles
 from schemas.auth import LoginRequest, LoginResponse
 import logging
 
@@ -44,7 +43,7 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
     hashed_password = hash_password(request.password)
     new_user = User(login=request.login, password_hash=hashed_password)
     # Назначаем роль "Официант"
-    waiter_role = db.query(Role).filter(Role.code == "waiter").first()
+    waiter_role = db.query(Roles).filter(Roles.code == "waiter").first()
     if waiter_role:
         new_user.roles.append(waiter_role)
 
