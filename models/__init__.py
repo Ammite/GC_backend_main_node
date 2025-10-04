@@ -20,8 +20,8 @@ from .products_groups import ProductGroup
 from .restaurant_sections import RestaurantSection
 from .schedule_types import ScheduleType
 from .tables import Table
-from .Terminal_groups import TerminalGroup
-from .Terminals import Terminal
+from .terminal_groups import TerminalGroup
+from .terminals import Terminal
 
 __all__ = [
     "DOrder",
