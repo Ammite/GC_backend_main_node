@@ -1,5 +1,4 @@
 from sqlalchemy import Column, String, ForeignKey, Integer, Boolean
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from database.database import Base
 
@@ -8,7 +7,7 @@ class Employees(Base):
     __tablename__ = "employees"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    iiko_id = Column(UUID(as_uuid=True), unique=True, nullable=False)
+    iiko_id = Column(String(50), unique=True, nullable=False)
 
     code = Column(String(50), nullable=True)
 

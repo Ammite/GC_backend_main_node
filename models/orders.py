@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Boolean, Numeric, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from database.database import Base
 
@@ -6,9 +6,9 @@ from database.database import Base
 class Order(Base):
     __tablename__ = "orders"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(String(50), unique=True, nullable=False)
-    organization_id = Column(String(50), ForeignKey("organizations.id"))
+    organization_id = Column(Integer, ForeignKey("organizations.id"))
     organization = relationship("Organization", back_populates="orders")
     terminal_group_id = Column(String(50), nullable=True)
     external_number = Column(String(100), nullable=True)
