@@ -23,5 +23,5 @@ class Modifier(Base):
     item = relationship("Item", back_populates="modifiers")
 
 
-    parent_id = Column(Integer, ForeignKey("modifiers.id"), nullable=True)
+    parent_id = Column(Integer, ForeignKey("modifier.id"), nullable=True)
     children = relationship("Modifier", backref="parent", remote_side=[id])
