@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Boolean, Numeric
-from sqlalchemy.dialects.postgresql import UUID
 from database.database import Base
 
 
@@ -7,7 +6,7 @@ class AttendanceType(Base):
     __tablename__ = "attendance_types"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    iiko_id = Column(UUID(as_uuid=True), unique=True, nullable=False)
+    iiko_id = Column(String(50), unique=True, nullable=False)
 
     code = Column(String(50), nullable=False)
     name = Column(String(100), nullable=False)

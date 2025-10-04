@@ -1,11 +1,14 @@
-from sqlalchemy import Column, String, ForeignKey
+from sqlalchemy import Column, String, ForeignKey, Integer, Boolean
 from sqlalchemy.orm import relationship
 from database.database import Base
+
+
 class Table(Base):
     __tablename__ = "tables"
 
-    id = Column(String(50), primary_key=True)
-    section_id = Column(String(50), ForeignKey("restaurant_sections.id"), nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    iiko_id = Column(String(50), unique=True, nullable=False)
+    section_id = Column(Integer, ForeignKey("restaurant_sections.id"), nullable=False)
 
     number = Column(Integer, nullable=False)
     name = Column(String(255), nullable=True)

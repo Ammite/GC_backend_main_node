@@ -9,6 +9,19 @@ from .user import User
 from .user_reward import UserReward
 from .user_salary import UserSalary
 from .attendance_types import AttendanceType
+from .categories import Category
+from .employees import Employees
+from .menu_categories import MenuCategory
+from .modifiers import Modifier
+from .order_types import OrderType
+from .orders import Order
+from .organizations import Organization
+from .products_groups import ProductGroup
+from .restaurant_sections import RestaurantSection
+from .schedule_types import ScheduleType
+from .tables import Table
+from .terminal_groups import TerminalGroup
+from .terminals import Terminal
 
 __all__ = [
     "DOrder",
@@ -22,6 +35,19 @@ __all__ = [
     "UserReward",
     "UserSalary",
     "AttendanceType",
+    "Category",
+    "Employees",
+    "MenuCategory",
+    "Modifier",
+    "OrderType",
+    "Order",
+    "Organization",
+    "ProductGroup",
+    "RestaurantSection",
+    "ScheduleType",
+    "Table",
+    "TerminalGroup",
+    "Terminal",
 ]
 
 
