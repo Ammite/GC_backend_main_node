@@ -1,13 +1,12 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, Boolean
 from sqlalchemy.orm import relationship
 from database.database import Base
-
 
 class Item(Base):
     __tablename__ = "items"
 
-    id = Column(Integer, primary_key=True, index=True)  # локальный id
-    iiko_id = Column(String(50), unique=True, nullable=False)  # внешний id iiko
+    id = Column(Integer, primary_key=True, index=True)
+    iiko_id = Column(String(50), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     code = Column(String(50), nullable=True)
@@ -19,5 +18,11 @@ class Item(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     category = relationship("Category", back_populates="items")
 
+
+    menu_category_id = Column(Integer, ForeignKey("menu_categories.id"), nullable=True)
+    menu_category = relationship("MenuCategory", back_populates="items")
+
+    product_group_id = Column(Integer, ForeignKey("products_groups.id"), nullable=True)
+    product_group = relationship("ProductGroup", back_populates="items")
 
     modifiers = relationship("Modifier", back_populates="item")

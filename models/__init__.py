@@ -8,7 +8,7 @@ from .t_order import TOrder
 from .user import User
 from .user_reward import UserReward
 from .user_salary import UserSalary
-from .attendance_types import Attendance_Type
+from .attendance_types import AttendanceType
 
 __all__ = [
     "DOrder",
@@ -21,7 +21,7 @@ __all__ = [
     "User",
     "UserReward",
     "UserSalary",
-    "Attendance_Type",
+    "AttendanceType",
 ]
 
 
