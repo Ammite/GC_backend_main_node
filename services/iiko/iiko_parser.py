@@ -50,11 +50,7 @@ class IikoParser:
             category = {
                 "iiko_id": group.get("id"),
                 "name": group.get("name"),
-                "description": group.get("description", ""),
-                "is_active": not group.get("isDeleted", False),
-                "sort_order": group.get("sortOrder", 0),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
+                "parent_id": group.get("parentId")  # Нужно будет получить из других категорий
             }
             categories.append(category)
         
@@ -151,11 +147,7 @@ class IikoParser:
             parsed_category = {
                 "iiko_id": category.get("id"),
                 "name": category.get("name"),
-                "description": category.get("description", ""),
-                "is_active": not category.get("isDeleted", False),
-                "sort_order": category.get("sortOrder", 0),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
+                "parent_id": category.get("parentId")  # Нужно будет получить из других категорий
             }
             parsed_categories.append(parsed_category)
         
@@ -174,26 +166,28 @@ class IikoParser:
             if "surname" in employee:  # Cloud API
                 parsed_employee = {
                     "iiko_id": employee.get("id"),
-                    "name": employee.get("name"),
-                    "surname": employee.get("surname", ""),
+                    "code": employee.get("code", ""),
+                    "first_name": employee.get("name", ""),
                     "middle_name": employee.get("middleName", ""),
+                    "last_name": employee.get("surname", ""),
                     "phone": employee.get("phone", ""),
-                    "email": employee.get("email", ""),
-                    "is_active": not employee.get("isDeleted", False),
-                    "created_at": datetime.now(),
-                    "updated_at": datetime.now()
+                    "cell_phone": employee.get("cellPhone", ""),
+                    "birthday": employee.get("birthday", ""),
+                    "hire_date": employee.get("hireDate", ""),
+                    "deleted": employee.get("isDeleted", False)
                 }
             else:  # Server API
                 parsed_employee = {
                     "iiko_id": employee.get("id"),
-                    "name": employee.get("name"),
-                    "surname": "",  # Server API не предоставляет фамилию отдельно
+                    "code": employee.get("code", ""),
+                    "first_name": employee.get("name", ""),
                     "middle_name": "",  # Server API не предоставляет отчество отдельно
+                    "last_name": "",  # Server API не предоставляет фамилию отдельно
                     "phone": "",  # Server API не предоставляет телефон
-                    "email": "",  # Server API не предоставляет email
-                    "is_active": not employee.get("deleted", False),
-                    "created_at": datetime.now(),
-                    "updated_at": datetime.now()
+                    "cell_phone": "",  # Server API не предоставляет мобильный телефон
+                    "birthday": "",  # Server API не предоставляет дату рождения
+                    "hire_date": "",  # Server API не предоставляет дату найма
+                    "deleted": employee.get("deleted", False)
                 }
             
             parsed_employees.append(parsed_employee)
@@ -296,12 +290,12 @@ class IikoParser:
         for table in data:
             parsed_table = {
                 "iiko_id": table.get("id"),
-                "name": table.get("name"),
-                "description": table.get("description", ""),
-                "capacity": table.get("capacity", 0),
-                "is_active": not table.get("isDeleted", False),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
+                "section_id": table.get("sectionId"),  # Нужно будет получить из restaurant_sections
+                "number": table.get("number", 0),
+                "name": table.get("name", ""),
+                "revision": table.get("revision", ""),
+                "is_deleted": table.get("isDeleted", False),
+                "pos_id": table.get("posId", "")
             }
             parsed_tables.append(parsed_table)
         
