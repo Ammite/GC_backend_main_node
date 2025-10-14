@@ -302,8 +302,32 @@ async def sync_sales(
         }
 
 
+@router.post("/items/cloud")
+async def sync_items_cloud_all(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Синхронизация товаров из Cloud API для всех организаций
+    """
+    try:
+        logger.info("Запуск синхронизации товаров Cloud API для всех организаций")
+        result = await iiko_sync.sync_items_cloud(db)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация товаров Cloud API для всех организаций завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации товаров Cloud API: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка синхронизации товаров Cloud API: {str(e)}",
+            "data": None
+        }
+
+
 @router.post("/items/cloud/{organization_id}")
-async def sync_items_cloud(organization_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+async def sync_items_cloud_org(organization_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
     """
     Синхронизация товаров из Cloud API для конкретной организации
     """

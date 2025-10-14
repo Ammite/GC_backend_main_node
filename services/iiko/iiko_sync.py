@@ -174,19 +174,40 @@ class IikoSync:
         
         return {"created": created, "updated": updated, "errors": errors}
 
-    async def sync_items_cloud(self, db: Session, organization_id: int) -> Dict[str, int]:
-        """Синхронизация товаров из Cloud API для конкретной организации"""
+    async def sync_items_cloud(self, db: Session, organization_id: int = None) -> Dict[str, int]:
+        """Синхронизация товаров из Cloud API для конкретной организации или всех организаций"""
         try:
-            logger.info(f"Запуск синхронизации товаров Cloud API для организации {organization_id}")
-            
-            # Получаем данные из Cloud API
-            cloud_data = await self.iiko_service.get_cloud_menu(organization_id)
-            if not cloud_data:
-                logger.warning(f"Нет данных Cloud API для организации {organization_id}")
-                return {"created": 0, "updated": 0, "errors": 0}
-            
-            # Парсим данные
-            parsed_items = self.iiko_parser.parse_items_cloud(cloud_data, organization_id)
+            if organization_id:
+                logger.info(f"Запуск синхронизации товаров Cloud API для организации {organization_id}")
+                # Получаем данные из Cloud API для конкретной организации
+                cloud_data = await self.iiko_service.get_cloud_menu(organization_id)
+                if not cloud_data:
+                    logger.warning(f"Нет данных Cloud API для организации {organization_id}")
+                    return {"created": 0, "updated": 0, "errors": 0}
+                
+                # Парсим данные с привязкой к организации
+                parsed_items = self.iiko_parser.parse_items_cloud(cloud_data, organization_id)
+            else:
+                logger.info("Запуск синхронизации товаров Cloud API для всех организаций")
+                # Получаем все организации
+                organizations = await self.iiko_service.get_organizations()
+                if not organizations:
+                    logger.warning("Нет организаций для синхронизации")
+                    return {"created": 0, "updated": 0, "errors": 0}
+                
+                parsed_items = []
+                # Для каждой организации получаем товары
+                for org in organizations:
+                    org_id = org.get("id")
+                    if org_id:
+                        # Получаем внутренний ID организации из базы
+                        db_org = db.query(Organization).filter(Organization.iiko_id == org_id).first()
+                        if db_org:
+                            cloud_data = await self.iiko_service.get_cloud_menu(org_id)
+                            if cloud_data:
+                                # Парсим данные с привязкой к внутреннему ID организации
+                                org_items = self.iiko_parser.parse_items_cloud(cloud_data, db_org.id)
+                                parsed_items.extend(org_items)
             
             created = 0
             updated = 0
@@ -194,26 +215,19 @@ class IikoSync:
             
             for item_data in parsed_items:
                 try:
-                    # Ищем существующий товар по iiko_id
+                    # Ищем существующий товар по iiko_id и organization_id
                     existing_item = db.query(Item).filter(
-                        Item.iiko_id == item_data["iiko_id"]
+                        Item.iiko_id == item_data["iiko_id"],
+                        Item.organization_id == item_data["organization_id"]
                     ).first()
                     
                     if existing_item:
-                        # Если товар уже существует и у него есть organization_id, обновляем
-                        if existing_item.organization_id is not None:
-                            for key, value in item_data.items():
-                                if key not in ["created_at"]:
-                                    setattr(existing_item, key, value)
-                            existing_item.updated_at = datetime.now()
-                            updated += 1
-                        else:
-                            # Если organization_id пустой, обновляем
-                            for key, value in item_data.items():
-                                if key not in ["created_at"]:
-                                    setattr(existing_item, key, value)
-                            existing_item.updated_at = datetime.now()
-                            updated += 1
+                        # Обновляем существующий товар
+                        for key, value in item_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_item, key, value)
+                        existing_item.updated_at = datetime.now()
+                        updated += 1
                     else:
                         # Создаем новый товар
                         new_item = Item(**item_data)
