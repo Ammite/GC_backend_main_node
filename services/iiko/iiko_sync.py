@@ -13,9 +13,9 @@ from .iiko_service import iiko_service
 from .iiko_parser import iiko_parser
 from database.database import get_db
 from models import (
-    Organizations, Category, Item, Modifier, Employees, 
-    Roles, Shifts, Tables, Terminals, ProductGroup,
-    AttendanceTypes, RestaurantSections, TerminalGroups
+    Organization, Category, Item, Modifier, Employees, 
+    Roles, Shift, Table, Terminal, ProductGroup,
+    AttendanceType, RestaurantSection, TerminalGroup
 )
 
 logger = logging.getLogger(__name__)
@@ -31,12 +31,8 @@ class IikoSync:
     async def sync_organizations(self, db: Session) -> Dict[str, int]:
         """Синхронизация организаций"""
         try:
-            # Получаем данные из API
-            cloud_data = await self.service.get_cloud_organizations()
-            server_data = await self.service.get_server_organizations()
-            
-            # Выбираем данные (приоритет Cloud API)
-            data = cloud_data if cloud_data else server_data
+            # Получаем данные только из Cloud API
+            data = await self.service.get_cloud_organizations()
             
             if not data:
                 logger.warning("Не удалось получить данные организаций")
@@ -52,8 +48,8 @@ class IikoSync:
             for org_data in parsed_data:
                 try:
                     # Проверяем существование организации
-                    existing_org = db.query(Organizations).filter(
-                        Organizations.iiko_id == org_data["iiko_id"]
+                    existing_org = db.query(Organization).filter(
+                        Organization.iiko_id == org_data["iiko_id"]
                     ).first()
                     
                     if existing_org:
@@ -65,7 +61,7 @@ class IikoSync:
                         updated += 1
                     else:
                         # Создаем новую
-                        new_org = Organizations(**org_data)
+                        new_org = Organization(**org_data)
                         db.add(new_org)
                         created += 1
                     
@@ -314,8 +310,8 @@ class IikoSync:
             
             for table_data in parsed_data:
                 try:
-                    existing_table = db.query(Tables).filter(
-                        Tables.iiko_id == table_data["iiko_id"]
+                    existing_table = db.query(Table).filter(
+                        Table.iiko_id == table_data["iiko_id"]
                     ).first()
                     
                     if existing_table:
@@ -325,7 +321,7 @@ class IikoSync:
                         existing_table.updated_at = datetime.now()
                         updated += 1
                     else:
-                        new_table = Tables(**table_data)
+                        new_table = Table(**table_data)
                         db.add(new_table)
                         created += 1
                         
@@ -359,8 +355,8 @@ class IikoSync:
             
             for terminal_data in parsed_data:
                 try:
-                    existing_terminal = db.query(Terminals).filter(
-                        Terminals.iiko_id == terminal_data["iiko_id"]
+                    existing_terminal = db.query(Terminal).filter(
+                        Terminal.iiko_id == terminal_data["iiko_id"]
                     ).first()
                     
                     if existing_terminal:
@@ -370,7 +366,7 @@ class IikoSync:
                         existing_terminal.updated_at = datetime.now()
                         updated += 1
                     else:
-                        new_terminal = Terminals(**terminal_data)
+                        new_terminal = Terminal(**terminal_data)
                         db.add(new_terminal)
                         created += 1
                         

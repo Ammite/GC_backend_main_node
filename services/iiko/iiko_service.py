@@ -163,10 +163,18 @@ class IikoService:
     # Cloud API методы
     async def get_cloud_organizations(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение списка организаций (Cloud API)"""
-        return await self._make_request(
+        result = await self._make_request(
             IikoApiType.CLOUD,
-            "/api/1/organizations"
+            "/api/1/organizations",
+            method="POST",
+            data={}
         )
+        # Cloud API возвращает список организаций напрямую
+        if isinstance(result, list):
+            return result
+        elif isinstance(result, dict) and "organizations" in result:
+            return result["organizations"]
+        return None
 
     async def get_cloud_menu(self, organization_id: Optional[str] = None) -> Optional[Dict[Any, Any]]:
         """Получение меню (Cloud API)"""
@@ -321,10 +329,16 @@ class IikoService:
     # Server API методы
     async def get_server_organizations(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение списка организаций (Server API)"""
-        return await self._make_request(
+        result = await self._make_request(
             IikoApiType.SERVER,
             "/resto/api/organizations"
         )
+        # Server API возвращает список организаций напрямую
+        if isinstance(result, list):
+            return result
+        elif isinstance(result, dict) and "organizations" in result:
+            return result["organizations"]
+        return None
 
     async def get_server_products(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение продуктов (Server API)"""
