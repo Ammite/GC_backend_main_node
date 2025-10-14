@@ -18,6 +18,14 @@ def _parse_boolean(value):
     return False
 
 
+def _safe_get(data: Dict[Any, Any], key: str, default: Any = None) -> Any:
+    """Безопасное получение значения с обработкой пустых объектов"""
+    value = data.get(key, default)
+    if value == {}:  # Если значение - пустой словарь, возвращаем None
+        return None
+    return value
+
+
 class IikoParser:
     """Класс для парсинга данных из iiko API"""
     
@@ -441,7 +449,7 @@ class IikoParser:
                 
                 # Типы и категории
                 "transaction_type": transaction.get("TransactionType"),
-                "transaction_type_code": transaction.get("TransactionType.Code"),
+                "transaction_type_code": _safe_get(transaction, "TransactionType.Code"),
                 "transaction_side": transaction.get("TransactionSide"),
                 
                 # Номенклатура
