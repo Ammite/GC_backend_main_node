@@ -179,7 +179,7 @@ class IikoService:
             )
         else:
             # Если organization_id не указан, получаем все организации и их меню
-            organizations = await self.get_cloud_organizations()
+            organizations = await self.get_organizations()
             if not organizations:
                 return None
             
@@ -217,7 +217,7 @@ class IikoService:
             )
         else:
             # Если organization_id не указан, получаем сотрудников из всех организаций
-            organizations = await self.get_cloud_organizations()
+            organizations = await self.get_organizations()
             if not organizations:
                 return None
             
@@ -258,7 +258,7 @@ class IikoService:
             )
         else:
             # Если organization_id не указан, получаем столы из всех организаций
-            organizations = await self.get_cloud_organizations()
+            organizations = await self.get_organizations()
             if not organizations:
                 return None
             
@@ -288,7 +288,7 @@ class IikoService:
             )
         else:
             # Если organization_id не указан, получаем терминалы из всех организаций
-            organizations = await self.get_cloud_organizations()
+            organizations = await self.get_organizations()
             if not organizations:
                 return None
             
@@ -492,17 +492,8 @@ class IikoService:
             return await self.get_cloud_employees(organization_id)
 
     async def get_organizations(self, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
-        """Получение организаций (пробует Cloud, затем Server)"""
-        if prefer_cloud:
-            result = await self.get_cloud_organizations()
-            if result:
-                return result
-            return await self.get_server_organizations()
-        else:
-            result = await self.get_server_organizations()
-            if result:
-                return result
-            return await self.get_cloud_organizations()
+        """Получение организаций (только Cloud API)"""
+        return await self.get_cloud_organizations()
 
     async def get_tables(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
         """Получение столов (пробует Cloud, затем Server)"""
