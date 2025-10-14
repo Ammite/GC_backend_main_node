@@ -26,6 +26,33 @@ def _safe_get(data: Dict[Any, Any], key: str, default: Any = None) -> Any:
     return value
 
 
+def _extract_numeric_value(value: Any) -> Optional[float]:
+    """Извлечение числового значения из различных типов данных"""
+    if isinstance(value, dict):
+        # Если это словарь, ищем числовые значения
+        for key in ['sum', 'value', 'amount', 'price', 'average']:
+            if key in value and isinstance(value[key], (int, float)):
+                return float(value[key])
+        # Если не нашли числовое значение, возвращаем None
+        return None
+    elif isinstance(value, (int, float)):
+        # Если это число, возвращаем как есть
+        return float(value)
+    elif isinstance(value, str):
+        # Если это строка, пытаемся преобразовать в число
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    else:
+        return None
+
+
+def _extract_currency_sum(value: Any) -> Optional[float]:
+    """Извлечение суммы из валютного объекта"""
+    return _extract_numeric_value(value)
+
+
 class IikoParser:
     """Класс для парсинга данных из iiko API"""
     
@@ -430,21 +457,21 @@ class IikoParser:
                 
                 # Финансовые поля
                 "amount": transaction.get("Amount"),
-                "sum_resigned": transaction.get("Sum.ResignedSum"),
-                "sum_incoming": transaction.get("Sum.Incoming"),
-                "sum_outgoing": transaction.get("Sum.Outgoing"),
-                "sum_part_of_income": transaction.get("Sum.PartOfIncome"),
-                "sum_part_of_total_income": transaction.get("Sum.PartOfTotalIncome"),
+                "sum_resigned": _extract_numeric_value(transaction.get("Sum.ResignedSum")),
+                "sum_incoming": _extract_numeric_value(transaction.get("Sum.Incoming")),
+                "sum_outgoing": _extract_numeric_value(transaction.get("Sum.Outgoing")),
+                "sum_part_of_income": _extract_numeric_value(transaction.get("Sum.PartOfIncome")),
+                "sum_part_of_total_income": _extract_numeric_value(transaction.get("Sum.PartOfTotalIncome")),
                 
                 # Остатки
-                "start_balance_money": transaction.get("StartBalance.Money"),
-                "final_balance_money": transaction.get("FinalBalance.Money"),
-                "start_balance_amount": transaction.get("StartBalance.Amount"),
-                "final_balance_amount": transaction.get("FinalBalance.Amount"),
+                "start_balance_money": _extract_numeric_value(transaction.get("StartBalance.Money")),
+                "final_balance_money": _extract_numeric_value(transaction.get("FinalBalance.Money")),
+                "start_balance_amount": _extract_numeric_value(transaction.get("StartBalance.Amount")),
+                "final_balance_amount": _extract_numeric_value(transaction.get("FinalBalance.Amount")),
                 
                 # Приход/расход
-                "amount_in": transaction.get("Amount.In"),
-                "amount_out": transaction.get("Amount.Out"),
+                "amount_in": _extract_numeric_value(transaction.get("Amount.In")),
+                "amount_out": _extract_numeric_value(transaction.get("Amount.Out")),
                 "contr_amount": transaction.get("Contr-Amount"),
                 
                 # Типы и категории
@@ -460,7 +487,7 @@ class IikoParser:
                 "product_category": transaction.get("Product.Category"),
                 "product_type": transaction.get("Product.Type"),
                 "product_measure_unit": transaction.get("Product.MeasureUnit"),
-                "product_avg_sum": transaction.get("Product.AvgSum"),
+                "product_avg_sum": _extract_numeric_value(transaction.get("Product.AvgSum")),
                 "product_cooking_place_type": transaction.get("Product.CookingPlaceType"),
                 "product_accounting_category": transaction.get("Product.AccountingCategory"),
                 
@@ -692,13 +719,13 @@ class IikoParser:
                 
                 # Финансовые поля
                 "dish_sum_int": sale.get("DishSumInt"),
-                "dish_sum_int_average_price_with_vat": sale.get("DishSumInt.averagePriceWithVAT"),
+                "dish_sum_int_average_price_with_vat": _extract_numeric_value(sale.get("DishSumInt.averagePriceWithVAT")),
                 "dish_discount_sum_int": sale.get("DishDiscountSumInt"),
-                "dish_discount_sum_int_average": sale.get("DishDiscountSumInt.average"),
-                "dish_discount_sum_int_average_by_guest": sale.get("DishDiscountSumInt.averageByGuest"),
-                "dish_discount_sum_int_average_price": sale.get("DishDiscountSumInt.averagePrice"),
-                "dish_discount_sum_int_average_price_with_vat": sale.get("DishDiscountSumInt.averagePriceWithVAT"),
-                "dish_discount_sum_int_average_without_vat": sale.get("DishDiscountSumInt.averageWithoutVAT"),
+                "dish_discount_sum_int_average": _extract_numeric_value(sale.get("DishDiscountSumInt.average")),
+                "dish_discount_sum_int_average_by_guest": _extract_numeric_value(sale.get("DishDiscountSumInt.averageByGuest")),
+                "dish_discount_sum_int_average_price": _extract_numeric_value(sale.get("DishDiscountSumInt.averagePrice")),
+                "dish_discount_sum_int_average_price_with_vat": _extract_numeric_value(sale.get("DishDiscountSumInt.averagePriceWithVAT")),
+                "dish_discount_sum_int_average_without_vat": _extract_numeric_value(sale.get("DishDiscountSumInt.averageWithoutVAT")),
                 "dish_discount_sum_int_without_vat": sale.get("DishDiscountSumInt.withoutVAT"),
                 "dish_return_sum": sale.get("DishReturnSum"),
                 "dish_return_sum_without_vat": sale.get("DishReturnSum.withoutVAT"),
@@ -713,8 +740,8 @@ class IikoParser:
                 "sum_after_discount_without_vat": sale.get("sumAfterDiscountWithoutVAT"),
                 
                 # НДС
-                "vat_percent": sale.get("VAT.Percent"),
-                "vat_sum": sale.get("VAT.Sum"),
+                "vat_percent": _extract_numeric_value(sale.get("VAT.Percent")),
+                "vat_sum": _extract_numeric_value(sale.get("VAT.Sum")),
                 
                 # Сессия и касса
                 "session_id": sale.get("SessionID"),
@@ -732,7 +759,7 @@ class IikoParser:
                 
                 # Гости
                 "guest_num": sale.get("GuestNum"),
-                "guest_num_avg": sale.get("GuestNum.Avg"),
+                "guest_num_avg": _extract_numeric_value(sale.get("GuestNum.Avg")),
                 
                 # Официант
                 "waiter_name": sale.get("WaiterName"),
@@ -768,7 +795,7 @@ class IikoParser:
                 
                 # Бонусы
                 "bonus_card_number": sale.get("Bonus.CardNumber"),
-                "bonus_sum": sale.get("Bonus.Sum"),
+                "bonus_sum": _extract_numeric_value(sale.get("Bonus.Sum")),
                 "bonus_type": sale.get("Bonus.Type"),
                 
                 # Фискальный чек
@@ -777,7 +804,7 @@ class IikoParser:
                 # Валюты
                 "currencies_currency": sale.get("Currencies.Currency"),
                 "currencies_currency_rate": sale.get("Currencies.CurrencyRate"),
-                "currencies_sum_in_currency": sale.get("Currencies.SumInCurrency"),
+                "currencies_sum_in_currency": _extract_currency_sum(sale.get("Currencies.SumInCurrency")),
                 
                 # Готовка
                 "cooking_place": sale.get("CookingPlace"),
@@ -785,25 +812,25 @@ class IikoParser:
                 "cooking_place_type": sale.get("CookingPlaceType"),
                 
                 # Время готовки
-                "cooking_cooking_duration_avg": sale.get("Cooking.CookingDuration.Avg"),
-                "cooking_cooking1_duration_avg": sale.get("Cooking.Cooking1Duration.Avg"),
-                "cooking_cooking2_duration_avg": sale.get("Cooking.Cooking2Duration.Avg"),
-                "cooking_cooking3_duration_avg": sale.get("Cooking.Cooking3Duration.Avg"),
-                "cooking_cooking4_duration_avg": sale.get("Cooking.Cooking4Duration.Avg"),
-                "cooking_cooking_late_time_avg": sale.get("Cooking.CookingLateTime.Avg"),
-                "cooking_feed_late_time_avg": sale.get("Cooking.FeedLateTime.Avg"),
-                "cooking_guest_wait_time_avg": sale.get("Cooking.GuestWaitTime.Avg"),
-                "cooking_kitchen_time_avg": sale.get("Cooking.KitchenTime.Avg"),
+                "cooking_cooking_duration_avg": _extract_numeric_value(sale.get("Cooking.CookingDuration.Avg")),
+                "cooking_cooking1_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking1Duration.Avg")),
+                "cooking_cooking2_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking2Duration.Avg")),
+                "cooking_cooking3_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking3Duration.Avg")),
+                "cooking_cooking4_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking4Duration.Avg")),
+                "cooking_cooking_late_time_avg": _extract_numeric_value(sale.get("Cooking.CookingLateTime.Avg")),
+                "cooking_feed_late_time_avg": _extract_numeric_value(sale.get("Cooking.FeedLateTime.Avg")),
+                "cooking_guest_wait_time_avg": _extract_numeric_value(sale.get("Cooking.GuestWaitTime.Avg")),
+                "cooking_kitchen_time_avg": _extract_numeric_value(sale.get("Cooking.KitchenTime.Avg")),
                 "cooking_serve_number": sale.get("Cooking.ServeNumber"),
-                "cooking_serve_time_avg": sale.get("Cooking.ServeTime.Avg"),
-                "cooking_start_delay_time_avg": sale.get("Cooking.StartDelayTime.Avg"),
+                "cooking_serve_time_avg": _extract_numeric_value(sale.get("Cooking.ServeTime.Avg")),
+                "cooking_start_delay_time_avg": _extract_numeric_value(sale.get("Cooking.StartDelayTime.Avg")),
                 
                 # Время заказа
                 "order_time_average_order_time": sale.get("OrderTime.AverageOrderTime"),
                 "order_time_average_precheque_time": sale.get("OrderTime.AveragePrechequeTime"),
-                "order_time_order_length": sale.get("OrderTime.OrderLength"),
-                "order_time_order_length_sum": sale.get("OrderTime.OrderLengthSum"),
-                "order_time_precheque_length": sale.get("OrderTime.PrechequeLength"),
+                "order_time_order_length": _extract_numeric_value(sale.get("OrderTime.OrderLength")),
+                "order_time_order_length_sum": _extract_numeric_value(sale.get("OrderTime.OrderLengthSum")),
+                "order_time_precheque_length": _extract_numeric_value(sale.get("OrderTime.PrechequeLength")),
                 
                 # Доставка
                 "delivery_is_delivery": sale.get("Delivery.IsDelivery"),
@@ -830,11 +857,11 @@ class IikoParser:
                 "delivery_bill_time": sale.get("Delivery.BillTime"),
                 "delivery_print_time": sale.get("Delivery.PrintTime"),
                 "delivery_delay": sale.get("Delivery.Delay"),
-                "delivery_delay_avg": sale.get("Delivery.DelayAvg"),
-                "delivery_way_duration": sale.get("Delivery.WayDuration"),
-                "delivery_way_duration_avg": sale.get("Delivery.WayDurationAvg"),
-                "delivery_way_duration_sum": sale.get("Delivery.WayDurationSum"),
-                "delivery_cooking_to_send_duration": sale.get("Delivery.CookingToSendDuration"),
+                "delivery_delay_avg": _extract_numeric_value(sale.get("Delivery.DelayAvg")),
+                "delivery_way_duration": _extract_numeric_value(sale.get("Delivery.WayDuration")),
+                "delivery_way_duration_avg": _extract_numeric_value(sale.get("Delivery.WayDurationAvg")),
+                "delivery_way_duration_sum": _extract_numeric_value(sale.get("Delivery.WayDurationSum")),
+                "delivery_cooking_to_send_duration": _extract_numeric_value(sale.get("Delivery.CookingToSendDuration")),
                 "delivery_diff_between_actual_delivery_time_and_predicted_delivery_time": sale.get("Delivery.DiffBetweenActualDeliveryTimeAndPredictedDeliveryTime"),
                 "delivery_predicted_cooking_complete_time": sale.get("Delivery.PredictedCookingCompleteTime"),
                 "delivery_predicted_delivery_time": sale.get("Delivery.PredictedDeliveryTime"),
@@ -856,14 +883,14 @@ class IikoParser:
                 "delivery_ecs_service": sale.get("Delivery.EcsService"),
                 
                 # Оценки доставки
-                "delivery_avg_mark": sale.get("Delivery.AvgMark"),
-                "delivery_avg_food_mark": sale.get("Delivery.AvgFoodMark"),
-                "delivery_avg_courier_mark": sale.get("Delivery.AvgCourierMark"),
-                "delivery_avg_operator_mark": sale.get("Delivery.AvgOperatorMark"),
-                "delivery_aggregated_avg_mark": sale.get("Delivery.AggregatedAvgMark"),
-                "delivery_aggregated_avg_food_mark": sale.get("Delivery.AggregatedAvgFoodMark"),
-                "delivery_aggregated_avg_courier_mark": sale.get("Delivery.AggregatedAvgCourierMark"),
-                "delivery_aggregated_avg_operator_mark": sale.get("Delivery.AggregatedAvgOperatorMark"),
+                "delivery_avg_mark": _extract_numeric_value(sale.get("Delivery.AvgMark")),
+                "delivery_avg_food_mark": _extract_numeric_value(sale.get("Delivery.AvgFoodMark")),
+                "delivery_avg_courier_mark": _extract_numeric_value(sale.get("Delivery.AvgCourierMark")),
+                "delivery_avg_operator_mark": _extract_numeric_value(sale.get("Delivery.AvgOperatorMark")),
+                "delivery_aggregated_avg_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgMark")),
+                "delivery_aggregated_avg_food_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgFoodMark")),
+                "delivery_aggregated_avg_courier_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgCourierMark")),
+                "delivery_aggregated_avg_operator_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgOperatorMark")),
                 
                 # Скидки заказа
                 "order_discount_guest_card": sale.get("OrderDiscount.GuestCard"),
@@ -902,17 +929,17 @@ class IikoParser:
                 # Стоимость продукта
                 "product_cost_base_mark_up": sale.get("ProductCostBase.MarkUp"),
                 "product_cost_base_one_item": sale.get("ProductCostBase.OneItem"),
-                "product_cost_base_percent": sale.get("ProductCostBase.Percent"),
-                "product_cost_base_percent_without_vat": sale.get("ProductCostBase.PercentWithoutVAT"),
+                "product_cost_base_percent": _extract_numeric_value(sale.get("ProductCostBase.Percent")),
+                "product_cost_base_percent_without_vat": _extract_numeric_value(sale.get("ProductCostBase.PercentWithoutVAT")),
                 "product_cost_base_product_cost": sale.get("ProductCostBase.ProductCost"),
                 "product_cost_base_profit": sale.get("ProductCostBase.Profit"),
                 
                 # Стимулирующая сумма
-                "incentive_sum_base_sum": sale.get("IncentiveSumBase.Sum"),
+                "incentive_sum_base_sum": _extract_numeric_value(sale.get("IncentiveSumBase.Sum")),
                 
                 # Процент от итога
-                "percent_of_summary_by_col": sale.get("PercentOfSummary.ByCol"),
-                "percent_of_summary_by_row": sale.get("PercentOfSummary.ByRow"),
+                "percent_of_summary_by_col": _extract_numeric_value(sale.get("PercentOfSummary.ByCol")),
+                "percent_of_summary_by_row": _extract_numeric_value(sale.get("PercentOfSummary.ByRow")),
                 
                 # Продано с блюдом
                 "sold_with_dish": sale.get("SoldWithDish"),
@@ -959,8 +986,8 @@ class IikoParser:
                 
                 # Время печати блюда
                 "dish_service_print_time": sale.get("DishServicePrintTime"),
-                "dish_service_print_time_max": sale.get("DishServicePrintTime.Max"),
-                "dish_service_print_time_open_to_last_print_duration": sale.get("DishServicePrintTime.OpenToLastPrintDuration"),
+                "dish_service_print_time_max": _extract_numeric_value(sale.get("DishServicePrintTime.Max")),
+                "dish_service_print_time_open_to_last_print_duration": _extract_numeric_value(sale.get("DishServicePrintTime.OpenToLastPrintDuration")),
                 
                 # Временные группировки по минутам
                 "open_time_minutes15": sale.get("OpenTime.Minutes15"),
