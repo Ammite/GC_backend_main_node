@@ -9,4 +9,4 @@ class Penalty(Base):
     iiko_id = Column(String(50), unique=True, nullable=True)
     penalty_sum = Column(Numeric(10, 2), nullable=False)
     description = Column(Text, nullable=True)
-    roles_id = Column(Integer, ForeignKey("roles.id"))
+    roles_id = Column(Integer, ForeignKey("users.id"))

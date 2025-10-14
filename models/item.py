@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, Boole
 from sqlalchemy.orm import relationship
 from database.database import Base
 
+
 class Item(Base):
     __tablename__ = "items"
 
@@ -22,7 +23,9 @@ class Item(Base):
     menu_category_id = Column(Integer, ForeignKey("menu_categories.id"), nullable=True)
     menu_category = relationship("MenuCategory", back_populates="items")
 
-    product_group_id = Column(Integer, ForeignKey("products_groups.id"), nullable=True)
+    product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)
     product_group = relationship("ProductGroup", back_populates="items")
 
     modifiers = relationship("Modifier", back_populates="item")
+
+

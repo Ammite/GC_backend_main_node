@@ -8,5 +8,5 @@ class UserReward(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(String(50), unique=True, nullable=True)
     reward_id = Column(Integer, ForeignKey("rewards.id"))
-    user_id = Column(Integer, ForeignKey("roles.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
     current_progress = Column(Integer)

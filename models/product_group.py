@@ -4,7 +4,7 @@ from database.database import Base
 
 
 class ProductGroup(Base):
-    __tablename__ = "products_groups"
+    __tablename__ = "product_groups"
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(String(50), unique=True, nullable=False)  # ID из iiko
@@ -15,7 +15,7 @@ class ProductGroup(Base):
     deleted = Column(Boolean, default=False)
 
     parent_iiko_id = Column(String(50), nullable=True)  # Внешний ID родителя (из iiko)
-    parent_id = Column(Integer, ForeignKey("products_groups.id"), nullable=True)  # Внутренний FK
+    parent_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)  # Внутренний FK
     parent = relationship("ProductGroup", remote_side=[id], back_populates="children")
 
     children = relationship("ProductGroup", back_populates="parent", cascade="all, delete-orphan")
@@ -28,3 +28,5 @@ class ProductGroup(Base):
 
 
     items = relationship("Item", back_populates="product_group", cascade="all, delete-orphan")
+
+

@@ -28,7 +28,6 @@ class IikoService:
         self.server_password = config.IIKO_SERVER_PASSWORD
         
         # Общие настройки
-        self.organization_id = config.IIKO_ORGANIZATION_ID
         self.timeout = 30
 
     async def _get_cloud_token(self) -> Optional[str]:
@@ -166,27 +165,157 @@ class IikoService:
         """Получение списка организаций (Cloud API)"""
         return await self._make_request(
             IikoApiType.CLOUD,
-            "/organizations"
+            "/api/1/organizations"
         )
 
     async def get_cloud_menu(self, organization_id: Optional[str] = None) -> Optional[Dict[Any, Any]]:
         """Получение меню (Cloud API)"""
-        org_id = organization_id or self.organization_id
-        return await self._make_request(
-            IikoApiType.CLOUD,
-            "/nomenclature",
-            method="POST",
-            data={"organizationId": org_id}
-        )
+        if organization_id:
+            return await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/nomenclature",
+                method="POST",
+                data={"organizationId": organization_id}
+            )
+        else:
+            # Если organization_id не указан, получаем все организации и их меню
+            organizations = await self.get_cloud_organizations()
+            if not organizations:
+                return None
+            
+            all_menu_data = {
+                "groups": [],
+                "products": [],
+                "productModifiers": []
+            }
+            
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    menu_data = await self._make_request(
+                        IikoApiType.CLOUD,
+                        "/api/1/nomenclature",
+                        method="POST",
+                        data={"organizationId": org_id}
+                    )
+                    if menu_data:
+                        # Объединяем данные из всех организаций
+                        all_menu_data["groups"].extend(menu_data.get("groups", []))
+                        all_menu_data["products"].extend(menu_data.get("products", []))
+                        all_menu_data["productModifiers"].extend(menu_data.get("productModifiers", []))
+            
+            return all_menu_data
 
     async def get_cloud_employees(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение сотрудников (Cloud API)"""
-        org_id = organization_id or self.organization_id
+        if organization_id:
+            return await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/employees",
+                method="POST",
+                data={"organizationId": organization_id}
+            )
+        else:
+            # Если organization_id не указан, получаем сотрудников из всех организаций
+            organizations = await self.get_cloud_organizations()
+            if not organizations:
+                return None
+            
+            all_employees = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    employees = await self._make_request(
+                        IikoApiType.CLOUD,
+                        "/api/1/employees",
+                        method="POST",
+                        data={"organizationId": org_id}
+                    )
+                    if employees:
+                        all_employees.extend(employees)
+            
+            return all_employees
+
+    async def get_cloud_employee_by_id(self, organization_id: Optional[str] = None, employee_id: str = None) -> Optional[Dict[Any, Any]]:
+        """Получение сотрудника по ID (Cloud API)"""
+        if not organization_id or not employee_id:
+            return None
         return await self._make_request(
             IikoApiType.CLOUD,
-            "/employees",
+            "/api/1/employees/info",
             method="POST",
-            data={"organizationId": org_id}
+            data={"organizationId": organization_id, "employeeId": employee_id}
+        )
+
+    async def get_cloud_tables(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение столов ресторана (Cloud API)"""
+        if organization_id:
+            return await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/reserve/available_restaurant_sections",
+                method="POST",
+                data={"organizationId": organization_id}
+            )
+        else:
+            # Если organization_id не указан, получаем столы из всех организаций
+            organizations = await self.get_cloud_organizations()
+            if not organizations:
+                return None
+            
+            all_tables = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    tables = await self._make_request(
+                        IikoApiType.CLOUD,
+                        "/api/1/reserve/available_restaurant_sections",
+                        method="POST",
+                        data={"organizationId": org_id}
+                    )
+                    if tables:
+                        all_tables.extend(tables)
+            
+            return all_tables
+
+    async def get_cloud_terminals(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение терминалов (Cloud API)"""
+        if organization_id:
+            return await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/terminal_groups",
+                method="POST",
+                data={"organizationId": organization_id}
+            )
+        else:
+            # Если organization_id не указан, получаем терминалы из всех организаций
+            organizations = await self.get_cloud_organizations()
+            if not organizations:
+                return None
+            
+            all_terminals = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    terminals = await self._make_request(
+                        IikoApiType.CLOUD,
+                        "/api/1/terminal_groups",
+                        method="POST",
+                        data={"organizationId": org_id}
+                    )
+                    if terminals:
+                        all_terminals.extend(terminals)
+            
+            return all_terminals
+
+    async def get_cloud_orders_by_table(self, organization_id: Optional[str] = None, table_id: str = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение заказов по столу (Cloud API)"""
+        if not organization_id or not table_id:
+            return None
+        return await self._make_request(
+            IikoApiType.CLOUD,
+            "/api/1/order/by_table",
+            method="POST",
+            data={"organizationId": organization_id, "tableId": table_id}
         )
 
     # Server API методы
@@ -194,53 +323,145 @@ class IikoService:
         """Получение списка организаций (Server API)"""
         return await self._make_request(
             IikoApiType.SERVER,
-            "/organizations"
+            "/resto/api/organizations"
         )
 
-    async def get_server_menu(self, organization_id: Optional[str] = None) -> Optional[Dict[Any, Any]]:
-        """Получение меню (Server API)"""
-        org_id = organization_id or self.organization_id
+    async def get_server_products(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение продуктов (Server API)"""
         return await self._make_request(
             IikoApiType.SERVER,
-            "/nomenclature",
-            method="POST",
-            data={"organizationId": org_id}
+            "/resto/api/v2/entities/products/list"
         )
 
-    async def get_server_employees(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+    async def get_server_product_groups(self, date_from: str = None, date_to: str = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп продуктов (Server API)"""
+        params = {}
+        if date_from:
+            params["dateFrom"] = date_from
+        if date_to:
+            params["dateTo"] = date_to
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/entities/products/group/list",
+            params=params
+        )
+
+    async def get_server_product_categories(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение категорий продуктов (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/entities/products/category/list"
+        )
+
+    async def get_server_employees(self, include_deleted: bool = True) -> Optional[List[Dict[Any, Any]]]:
         """Получение сотрудников (Server API)"""
-        org_id = organization_id or self.organization_id
+        params = {}
+        if include_deleted:
+            params["includeDeleted"] = "true"
         return await self._make_request(
             IikoApiType.SERVER,
-            "/employees",
-            method="POST",
-            data={"organizationId": org_id}
+            "/resto/api/employees",
+            params=params
         )
 
-    async def get_server_orders(
-        self, 
-        organization_id: Optional[str] = None,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None
-    ) -> Optional[List[Dict[Any, Any]]]:
-        """Получение заказов (Server API)"""
-        org_id = organization_id or self.organization_id
-        
-        # Если даты не указаны, берем последние 7 дней
-        if not from_date:
-            from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-        if not to_date:
-            to_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
+    async def get_server_departments(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение отделов (Server API)"""
         return await self._make_request(
             IikoApiType.SERVER,
-            "/orders",
+            "/resto/api/corporation/departments"
+        )
+
+    async def get_server_roles(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение ролей сотрудников (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/employees/roles"
+        )
+
+    async def get_server_schedule_types(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение типов расписания (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/employees/schedule/types"
+        )
+
+    async def get_server_attendance_types(self, include_deleted: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение типов посещаемости (Server API)"""
+        params = {}
+        if include_deleted:
+            params["includeDeleted"] = "true"
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/employees/attendance/types",
+            params=params
+        )
+
+    async def get_server_sales_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
+        """Получение отчета по продажам (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/reports/olap",
             method="POST",
-            data={
-                "organizationId": org_id,
-                "from": from_date,
-                "to": to_date
-            }
+            data=report_data
+        )
+
+    async def get_server_transactions_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
+        """Получение отчета по транзакциям (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/reports/olap",
+            method="POST",
+            data=report_data
+        )
+
+    async def get_server_deliveries_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
+        """Получение отчета по доставкам (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/reports/olap",
+            method="POST",
+            data=report_data
+        )
+
+    async def get_server_report_presets(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение пресетов отчетов (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/reports/olap/presets"
+        )
+
+    async def get_server_report_fields(self, report_type: str) -> Optional[List[Dict[Any, Any]]]:
+        """Получение полей отчетов (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            f"/resto/api/v2/reports/olap/columns?reportType={report_type}"
+        )
+
+    async def get_server_store_report_presets(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение пресетов складских отчетов (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/reports/storeReportPresets"
+        )
+
+    async def get_server_product_expense_report(self, department: str, date_from: str, date_to: str) -> Optional[Dict[Any, Any]]:
+        """Получение отчета по расходу продуктов (Server API)"""
+        params = {
+            "department": department,
+            "dateFrom": date_from,
+            "dateTo": date_to
+        }
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/reports/productExpense",
+            params=params
+        )
+
+    async def logout_server(self) -> Optional[Dict[Any, Any]]:
+        """Выход из системы (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/logout"
         )
 
     # Универсальные методы (пробуют оба API)
@@ -250,9 +471,9 @@ class IikoService:
             result = await self.get_cloud_menu(organization_id)
             if result:
                 return result
-            return await self.get_server_menu(organization_id)
+            return await self.get_server_products()
         else:
-            result = await self.get_server_menu(organization_id)
+            result = await self.get_server_products()
             if result:
                 return result
             return await self.get_cloud_menu(organization_id)
@@ -263,9 +484,9 @@ class IikoService:
             result = await self.get_cloud_employees(organization_id)
             if result:
                 return result
-            return await self.get_server_employees(organization_id)
+            return await self.get_server_employees()
         else:
-            result = await self.get_server_employees(organization_id)
+            result = await self.get_server_employees()
             if result:
                 return result
             return await self.get_cloud_employees(organization_id)
@@ -282,6 +503,58 @@ class IikoService:
             if result:
                 return result
             return await self.get_cloud_organizations()
+
+    async def get_tables(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение столов (пробует Cloud, затем Server)"""
+        if prefer_cloud:
+            result = await self.get_cloud_tables(organization_id)
+            if result:
+                return result
+            # Server API не имеет прямого аналога для столов
+            return None
+        else:
+            result = await self.get_cloud_tables(organization_id)
+            if result:
+                return result
+            return None
+
+    async def get_terminals(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение терминалов (пробует Cloud, затем Server)"""
+        if prefer_cloud:
+            result = await self.get_cloud_terminals(organization_id)
+            if result:
+                return result
+            # Server API не имеет прямого аналога для терминалов
+            return None
+        else:
+            result = await self.get_cloud_terminals(organization_id)
+            if result:
+                return result
+            return None
+
+    async def get_product_groups(self, date_from: str = None, date_to: str = None, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп продуктов (только Server API)"""
+        return await self.get_server_product_groups(date_from, date_to)
+
+    async def get_product_categories(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение категорий продуктов (только Server API)"""
+        return await self.get_server_product_categories()
+
+    async def get_departments(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение отделов (только Server API)"""
+        return await self.get_server_departments()
+
+    async def get_roles(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение ролей (только Server API)"""
+        return await self.get_server_roles()
+
+    async def get_schedule_types(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение типов расписания (только Server API)"""
+        return await self.get_server_schedule_types()
+
+    async def get_attendance_types(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение типов посещаемости (только Server API)"""
+        return await self.get_server_attendance_types()
 
     def clear_tokens(self):
         """Очистка токенов (для принудительного обновления)"""

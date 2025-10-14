@@ -11,6 +11,6 @@ class Organization(Base):
     iiko_id = Column(String(50), unique=True, nullable=False)
     name = Column(String(255), nullable=False)
     code = Column(String(50), nullable=True)
-    orders = relationship("Order", back_populates="organization")
+    orders = relationship("DOrder", back_populates="organization")
     terminal_groups = relationship("TerminalGroup", back_populates="organization")
     terminals = relationship("Terminal", back_populates="organization")
