@@ -65,11 +65,13 @@ class IikoSync:
                         db.add(new_org)
                         created += 1
                     
+                    # Коммитим каждую запись отдельно
+                    db.commit()
+                    
                 except Exception as e:
                     logger.error(f"Ошибка синхронизации организации {org_data.get('name')}: {e}")
+                    db.rollback()  # Откатываем транзакцию при ошибке
                     errors += 1
-            
-            db.commit()
             logger.info(f"Синхронизация организаций завершена: создано {created}, обновлено {updated}, ошибок {errors}")
             return {"created": created, "updated": updated, "errors": errors}
             
