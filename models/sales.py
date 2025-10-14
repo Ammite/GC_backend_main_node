@@ -10,7 +10,7 @@ class Sales(Base):
 
     # Основные поля
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    item_sale_event_id = Column(String(50), unique=True, nullable=True)  # ItemSaleEvent.Id
+    item_sale_event_id = Column(String(50), nullable=True)  # ItemSaleEvent.Id
     
     # Организация и подразделения
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)

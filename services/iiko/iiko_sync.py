@@ -617,11 +617,6 @@ class IikoSync:
             
             for sale_data in parsed_data:
                 try:
-                    # Ищем существующую продажу
-                    existing_sale = db.query(Sales).filter(
-                        Sales.item_sale_event_id == sale_data["item_sale_event_id"]
-                    ).first()
-                    
                     # Ищем организацию по Department.Code
                     department_code = sale_data.get("department_code")
                     organization_id = None
@@ -635,20 +630,12 @@ class IikoSync:
                     # Добавляем organization_id в данные
                     sale_data["organization_id"] = organization_id
                     
-                    # Убираем поля, которые не должны обновляться
-                    sale_data.pop("created_at", None)
-                    
-                    if existing_sale:
-                        for key, value in sale_data.items():
-                            setattr(existing_sale, key, value)
-                        existing_sale.updated_at = datetime.now()
-                        updated += 1
-                    else:
-                        sale_data["created_at"] = datetime.now()
-                        sale_data["updated_at"] = datetime.now()
-                        new_sale = Sales(**sale_data)
-                        db.add(new_sale)
-                        created += 1
+                    # Всегда создаем новую запись продажи
+                    sale_data["created_at"] = datetime.now()
+                    sale_data["updated_at"] = datetime.now()
+                    new_sale = Sales(**sale_data)
+                    db.add(new_sale)
+                    created += 1
                         
                 except Exception as e:
                     logger.error(f"Ошибка синхронизации продажи {sale_data.get('item_sale_event_id', 'Unknown')}: {e}")
@@ -656,8 +643,8 @@ class IikoSync:
                     errors += 1
             
             db.commit()
-            logger.info(f"Синхронизация продаж завершена: создано {created}, обновлено {updated}, ошибок {errors}")
-            return {"created": created, "updated": updated, "errors": errors}
+            logger.info(f"Синхронизация продаж завершена: создано {created}, ошибок {errors}")
+            return {"created": created, "updated": 0, "errors": errors}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации продаж: {e}")
