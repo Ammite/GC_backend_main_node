@@ -244,3 +244,26 @@ async def sync_organizations_employees_terminals(
             status_code=500,
             detail=f"Ошибка синхронизации: {str(e)}"
         )
+
+
+@router.post("/transactions")
+async def sync_transactions(
+    from_date: str = None,
+    to_date: str = None,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Синхронизация транзакций с iiko API
+    """
+    try:
+        logger.info(f"Запуск синхронизации транзакций для организации")
+        result = await iiko_sync.sync_transactions(db, from_date, to_date)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация транзакций завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации транзакций: {e}")

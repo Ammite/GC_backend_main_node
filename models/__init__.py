@@ -22,6 +22,7 @@ from .tables import Table
 from .terminal_groups import TerminalGroup
 from .terminals import Terminal
 from .transaction import Transaction
+from .sales import Sales
 
 __all__ = [
     "DOrder",
@@ -48,6 +49,7 @@ __all__ = [
     "TerminalGroup",
     "Terminal",
     "Transaction",
+    "Sales",
 ]
 
 

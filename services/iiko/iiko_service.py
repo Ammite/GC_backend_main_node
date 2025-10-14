@@ -6,6 +6,8 @@ import config
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
+from services.iiko import data_frames
+
 logger = logging.getLogger(__name__)
 
 class IikoApiType(Enum):
@@ -586,20 +588,41 @@ class IikoService:
             data=report_data
         )
 
-    async def get_transactions(self, organization_id: Optional[str] = None, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+    async def get_transactions(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение транзакций (Server API)"""
-        params = {
-            "organizationId": organization_id,
-            "fromDate": from_date,
-            "toDate": to_date
-        }
+        params = data_frames.iiko_transactions_data_frame
+        if from_date:
+            params["filters"]["DateTime.Typed"]["from"] = from_date
+        if to_date:
+            params["filters"]["DateTime.Typed"]["to"] = to_date
         result = await self.get_server_transactions_report(params)
+        if result and "data" in result:
+            return result["data"]
+        return None
+
+    async def get_sales(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение продаж (Server API)"""
+        params = data_frames.iiko_sales_data_frame
+        if from_date:
+            params["filters"]["OpenDate.Typed"]["from"] = from_date
+        if to_date:
+            params["filters"]["OpenDate.Typed"]["to"] = to_date
+        result = await self.get_server_sales_report(params)
         if result and "data" in result:
             return result["data"]
         return None
 
     async def get_server_transactions_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
         """Получение отчета по транзакциям (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/reports/olap",
+            method="POST",
+            data=report_data
+        )
+
+    async def get_server_sales_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
+        """Получение отчета по продажам (Server API)"""
         return await self._make_request(
             IikoApiType.SERVER,
             "/resto/api/v2/reports/olap",
