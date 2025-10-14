@@ -232,11 +232,12 @@ class IikoParser:
         for role in data:
             parsed_role = {
                 "iiko_id": role.get("id"),
+                "code": role.get("code", ""),
                 "name": role.get("name"),
-                "description": role.get("code", ""),  # Используем code как описание
-                "is_active": not role.get("deleted", False),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
+                "payment_per_hour": role.get("paymentPerHour", 0.0),
+                "steady_salary": role.get("steadySalary", 0.0),
+                "schedule_type": role.get("scheduleType"),
+                "deleted": role.get("deleted", False)
             }
             parsed_roles.append(parsed_role)
         

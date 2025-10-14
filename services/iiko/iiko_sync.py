@@ -273,9 +273,7 @@ class IikoSync:
                     
                     if existing_role:
                         for key, value in role_data.items():
-                            if key not in ["created_at"]:
-                                setattr(existing_role, key, value)
-                        existing_role.updated_at = datetime.now()
+                            setattr(existing_role, key, value)
                         updated += 1
                     else:
                         new_role = Roles(**role_data)
