@@ -21,3 +21,4 @@ class Organization(Base):
     terminals = relationship("Terminal", back_populates="organization")
     transactions = relationship("Transaction", back_populates="organization")
     sales = relationship("Sales", back_populates="organization")
+    items = relationship("Item", back_populates="organization")

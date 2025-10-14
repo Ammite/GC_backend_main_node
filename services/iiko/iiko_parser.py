@@ -158,6 +158,130 @@ class IikoParser:
         return parsed_products
 
     @staticmethod
+    def parse_items_cloud(data: List[Dict[Any, Any]], organization_id: int) -> List[Dict[Any, Any]]:
+        """Парсинг товаров из Cloud API"""
+        if not data:
+            return []
+        
+        parsed_items = []
+        for item in data:
+            # Получаем цену из sizePrices
+            price = 0
+            if item.get("sizePrices") and len(item["sizePrices"]) > 0:
+                price_data = item["sizePrices"][0].get("price", {})
+                price = price_data.get("currentPrice", 0)
+            
+            parsed_item = {
+                "iiko_id": item.get("id"),
+                "name": item.get("name"),
+                "description": item.get("description", ""),
+                "code": item.get("code"),
+                "price": price,
+                "deleted": item.get("isDeleted", False),
+                "organization_id": organization_id,
+                "data_source": "cloud",
+                "is_duplicate": False,
+                
+                # Cloud API поля
+                "fat_amount": item.get("fatAmount"),
+                "proteins_amount": item.get("proteinsAmount"),
+                "carbohydrates_amount": item.get("carbohydratesAmount"),
+                "energy_amount": item.get("energyAmount"),
+                "fat_full_amount": item.get("fatFullAmount"),
+                "proteins_full_amount": item.get("proteinsFullAmount"),
+                "carbohydrates_full_amount": item.get("carbohydratesFullAmount"),
+                "energy_full_amount": item.get("energyFullAmount"),
+                "weight": item.get("weight"),
+                "group_id": item.get("groupId"),
+                "product_category_id": item.get("productCategoryId"),
+                "type": item.get("type"),
+                "order_item_type": item.get("orderItemType"),
+                "modifier_schema_id": item.get("modifierSchemaId"),
+                "modifier_schema_name": item.get("modifierSchemaName"),
+                "splittable": item.get("splittable", False),
+                "measure_unit": item.get("measureUnit"),
+                "parent_group": item.get("parentGroup"),
+                "order_position": item.get("order"),
+                "full_name_english": item.get("fullNameEnglish"),
+                "use_balance_for_sell": item.get("useBalanceForSell", False),
+                "can_set_open_price": item.get("canSetOpenPrice", False),
+                "payment_subject": item.get("paymentSubject"),
+                "additional_info": item.get("additionalInfo"),
+                "is_deleted_cloud": item.get("isDeleted", False),
+                "seo_description": item.get("seoDescription"),
+                "seo_text": item.get("seoText"),
+                "seo_keywords": item.get("seoKeywords"),
+                "seo_title": item.get("seoTitle"),
+                
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+            parsed_items.append(parsed_item)
+        
+        logger.info(f"Парсинг товаров Cloud API: {len(parsed_items)} записей")
+        return parsed_items
+
+    @staticmethod
+    def parse_items_server(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг товаров из Server API"""
+        if not data:
+            return []
+        
+        parsed_items = []
+        for item in data:
+            # Получаем цветовые данные
+            color = item.get("color", {})
+            font_color = item.get("fontColor", {})
+            
+            parsed_item = {
+                "iiko_id": item.get("id"),
+                "name": item.get("name"),
+                "description": item.get("description", ""),
+                "code": item.get("code"),
+                "num": item.get("num"),
+                "price": item.get("defaultSalePrice", 0),
+                "deleted": item.get("deleted", False),
+                "organization_id": None,  # Server API не привязан к организации
+                "data_source": "server",
+                "is_duplicate": False,
+                
+                # Server API поля
+                "parent": item.get("parent"),
+                "tax_category": item.get("taxCategory"),
+                "category_server": item.get("category"),
+                "accounting_category": item.get("accountingCategory"),
+                "color_red": color.get("red"),
+                "color_green": color.get("green"),
+                "color_blue": color.get("blue"),
+                "font_color_red": font_color.get("red"),
+                "font_color_green": font_color.get("green"),
+                "font_color_blue": font_color.get("blue"),
+                "front_image_id": item.get("frontImageId"),
+                "position_server": item.get("position"),
+                "main_unit": item.get("mainUnit"),
+                "excluded_sections": item.get("excludedSections"),
+                "default_sale_price": item.get("defaultSalePrice"),
+                "place_type": item.get("placeType"),
+                "default_included_in_menu": item.get("defaultIncludedInMenu", False),
+                "type_server": item.get("type"),
+                "unit_weight": item.get("unitWeight"),
+                "unit_capacity": item.get("unitCapacity"),
+                "product_scale_id": item.get("productScaleId"),
+                "cold_loss_percent": item.get("coldLossPercent"),
+                "hot_loss_percent": item.get("hotLossPercent"),
+                "allergen_groups": item.get("allergenGroups"),
+                "estimated_purchase_price": item.get("estimatedPurchasePrice"),
+                "not_in_store_movement": item.get("notInStoreMovement", False),
+                
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+            parsed_items.append(parsed_item)
+        
+        logger.info(f"Парсинг товаров Server API: {len(parsed_items)} записей")
+        return parsed_items
+
+    @staticmethod
     def parse_product_groups(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
         """Парсинг групп продуктов (Server API)"""
         if not data:

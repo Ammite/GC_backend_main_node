@@ -300,3 +300,51 @@ async def sync_sales(
             "message": f"Ошибка синхронизации продаж: {str(e)}",
             "data": None
         }
+
+
+@router.post("/items/cloud/{organization_id}")
+async def sync_items_cloud(organization_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Синхронизация товаров из Cloud API для конкретной организации
+    """
+    try:
+        logger.info(f"Запуск синхронизации товаров Cloud API для организации {organization_id}")
+        result = await iiko_sync.sync_items_cloud(db, organization_id)
+        
+        return {
+            "success": True,
+            "message": f"Синхронизация товаров Cloud API для организации {organization_id} завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации товаров Cloud API: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка синхронизации товаров Cloud API: {str(e)}",
+            "data": None
+        }
+
+
+@router.post("/items/server")
+async def sync_items_server(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Синхронизация товаров из Server API
+    """
+    try:
+        logger.info("Запуск синхронизации товаров Server API")
+        result = await iiko_sync.sync_items_server(db)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация товаров Server API завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации товаров Server API: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка синхронизации товаров Server API: {str(e)}",
+            "data": None
+        }

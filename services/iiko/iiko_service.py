@@ -179,26 +179,25 @@ class IikoService:
             return result["organizations"]
         return None
 
-    async def get_cloud_menu(self, organization_id: Optional[str] = None) -> Optional[Dict[Any, Any]]:
-        """Получение меню (Cloud API)"""
+    async def get_cloud_menu(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение меню (Cloud API) - возвращает только продукты"""
         if organization_id:
-            return await self._make_request(
+            menu_data = await self._make_request(
                 IikoApiType.CLOUD,
                 "/api/1/nomenclature",
                 method="POST",
                 data={"organizationId": organization_id}
             )
+            if menu_data:
+                return menu_data.get("products", [])
+            return []
         else:
             # Если organization_id не указан, получаем все организации и их меню
             organizations = await self.get_organizations()
             if not organizations:
-                return None
+                return []
             
-            all_menu_data = {
-                "groups": [],
-                "products": [],
-                "productModifiers": []
-            }
+            all_products = []
             
             for org in organizations:
                 org_id = org.get("id")
@@ -210,12 +209,10 @@ class IikoService:
                         data={"organizationId": org_id}
                     )
                     if menu_data:
-                        # Объединяем данные из всех организаций
-                        all_menu_data["groups"].extend(menu_data.get("groups", []))
-                        all_menu_data["products"].extend(menu_data.get("products", []))
-                        all_menu_data["productModifiers"].extend(menu_data.get("productModifiers", []))
+                        # Добавляем продукты из всех организаций
+                        all_products.extend(menu_data.get("products", []))
             
-            return all_menu_data
+            return all_products
 
     async def get_cloud_employees(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение сотрудников (Cloud API)"""
@@ -359,6 +356,10 @@ class IikoService:
             IikoApiType.SERVER,
             "/resto/api/v2/entities/products/list"
         )
+
+    async def get_server_menu(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение меню (Server API) - алиас для get_server_products"""
+        return await self.get_server_products()
 
     async def get_server_product_groups(self, date_from: str = None, date_to: str = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение групп продуктов (Server API)"""

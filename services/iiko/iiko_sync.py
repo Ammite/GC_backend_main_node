@@ -173,6 +173,125 @@ class IikoSync:
                 errors += 1
         
         return {"created": created, "updated": updated, "errors": errors}
+
+    async def sync_items_cloud(self, db: Session, organization_id: int) -> Dict[str, int]:
+        """Синхронизация товаров из Cloud API для конкретной организации"""
+        try:
+            logger.info(f"Запуск синхронизации товаров Cloud API для организации {organization_id}")
+            
+            # Получаем данные из Cloud API
+            cloud_data = await self.iiko_service.get_cloud_menu(organization_id)
+            if not cloud_data:
+                logger.warning(f"Нет данных Cloud API для организации {organization_id}")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            # Парсим данные
+            parsed_items = self.iiko_parser.parse_items_cloud(cloud_data, organization_id)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for item_data in parsed_items:
+                try:
+                    # Ищем существующий товар по iiko_id
+                    existing_item = db.query(Item).filter(
+                        Item.iiko_id == item_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_item:
+                        # Если товар уже существует и у него есть organization_id, обновляем
+                        if existing_item.organization_id is not None:
+                            for key, value in item_data.items():
+                                if key not in ["created_at"]:
+                                    setattr(existing_item, key, value)
+                            existing_item.updated_at = datetime.now()
+                            updated += 1
+                        else:
+                            # Если organization_id пустой, обновляем
+                            for key, value in item_data.items():
+                                if key not in ["created_at"]:
+                                    setattr(existing_item, key, value)
+                            existing_item.updated_at = datetime.now()
+                            updated += 1
+                    else:
+                        # Создаем новый товар
+                        new_item = Item(**item_data)
+                        db.add(new_item)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации товара Cloud {item_data.get('name')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация товаров Cloud API завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации товаров Cloud API: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
+    async def sync_items_server(self, db: Session) -> Dict[str, int]:
+        """Синхронизация товаров из Server API"""
+        try:
+            logger.info("Запуск синхронизации товаров Server API")
+            
+            # Получаем данные из Server API
+            server_data = await self.iiko_service.get_server_menu()
+            if not server_data:
+                logger.warning("Нет данных Server API")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            # Парсим данные
+            parsed_items = self.iiko_parser.parse_items_server(server_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for item_data in parsed_items:
+                try:
+                    # Ищем существующий товар по iiko_id
+                    existing_item = db.query(Item).filter(
+                        Item.iiko_id == item_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_item:
+                        # Если товар уже существует и у него есть organization_id, создаем дубликат
+                        if existing_item.organization_id is not None:
+                            # Создаем дубликат с флагом is_duplicate = True
+                            item_data["is_duplicate"] = True
+                            item_data["organization_id"] = None  # Server API не привязан к организации
+                            new_item = Item(**item_data)
+                            db.add(new_item)
+                            created += 1
+                        else:
+                            # Если organization_id пустой, обновляем
+                            for key, value in item_data.items():
+                                if key not in ["created_at"]:
+                                    setattr(existing_item, key, value)
+                            existing_item.updated_at = datetime.now()
+                            updated += 1
+                    else:
+                        # Создаем новый товар
+                        new_item = Item(**item_data)
+                        db.add(new_item)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации товара Server {item_data.get('name')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация товаров Server API завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации товаров Server API: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
     
     async def _sync_modifiers(self, db: Session, modifiers_data: List[Dict[Any, Any]]) -> Dict[str, int]:
         """Синхронизация модификаторов"""
