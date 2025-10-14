@@ -630,7 +630,7 @@ class IikoParser:
         for sale in data:
             parsed_sale = {
                 # Основные поля
-                "iiko_id": _safe_get(sale, "ItemSaleEvent.Id"),
+                "item_sale_event_id": _safe_get(sale, "ItemSaleEvent.Id"),
                 
                 # Организация и подразделения
                 "department": sale.get("Department"),

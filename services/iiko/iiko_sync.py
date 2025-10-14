@@ -619,7 +619,7 @@ class IikoSync:
                 try:
                     # Ищем существующую продажу
                     existing_sale = db.query(Sales).filter(
-                        Sales.iiko_id == sale_data["iiko_id"]
+                        Sales.item_sale_event_id == sale_data["item_sale_event_id"]
                     ).first()
                     
                     # Ищем организацию по Department.Code
@@ -651,7 +651,7 @@ class IikoSync:
                         created += 1
                         
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации продажи {sale_data.get('iiko_id', 'Unknown')}: {e}")
+                    logger.error(f"Ошибка синхронизации продажи {sale_data.get('item_sale_event_id', 'Unknown')}: {e}")
                     db.rollback()  # Откатываем транзакцию при ошибке
                     errors += 1
             
