@@ -180,17 +180,17 @@ class IikoSync:
             if organization_id:
                 logger.info(f"Запуск синхронизации товаров Cloud API для организации {organization_id}")
                 # Получаем данные из Cloud API для конкретной организации
-                cloud_data = await self.iiko_service.get_cloud_menu(organization_id)
+                cloud_data = await self.service.get_cloud_menu(organization_id)
                 if not cloud_data:
                     logger.warning(f"Нет данных Cloud API для организации {organization_id}")
                     return {"created": 0, "updated": 0, "errors": 0}
                 
                 # Парсим данные с привязкой к организации
-                parsed_items = self.iiko_parser.parse_items_cloud(cloud_data, organization_id)
+                parsed_items = self.parser.parse_items_cloud(cloud_data, organization_id)
             else:
                 logger.info("Запуск синхронизации товаров Cloud API для всех организаций")
                 # Получаем все организации
-                organizations = await self.iiko_service.get_organizations()
+                organizations = await self.service.get_organizations()
                 if not organizations:
                     logger.warning("Нет организаций для синхронизации")
                     return {"created": 0, "updated": 0, "errors": 0}
@@ -203,10 +203,10 @@ class IikoSync:
                         # Получаем внутренний ID организации из базы
                         db_org = db.query(Organization).filter(Organization.iiko_id == org_id).first()
                         if db_org:
-                            cloud_data = await self.iiko_service.get_cloud_menu(org_id)
+                            cloud_data = await self.service.get_cloud_menu(org_id)
                             if cloud_data:
                                 # Парсим данные с привязкой к внутреннему ID организации
-                                org_items = self.iiko_parser.parse_items_cloud(cloud_data, db_org.id)
+                                org_items = self.parser.parse_items_cloud(cloud_data, db_org.id)
                                 parsed_items.extend(org_items)
             
             created = 0
@@ -253,13 +253,13 @@ class IikoSync:
             logger.info("Запуск синхронизации товаров Server API")
             
             # Получаем данные из Server API
-            server_data = await self.iiko_service.get_server_menu()
+            server_data = await self.service.get_server_menu()
             if not server_data:
                 logger.warning("Нет данных Server API")
                 return {"created": 0, "updated": 0, "errors": 0}
             
             # Парсим данные
-            parsed_items = self.iiko_parser.parse_items_server(server_data)
+            parsed_items = self.parser.parse_items_server(server_data)
             
             created = 0
             updated = 0

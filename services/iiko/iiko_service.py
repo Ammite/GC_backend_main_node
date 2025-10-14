@@ -1,5 +1,6 @@
 import httpx
 import logging
+import asyncio
 from typing import Optional, Dict, Any, List
 from enum import Enum
 import config
@@ -31,7 +32,16 @@ class IikoService:
         self.server_password = config.IIKO_SERVER_PASSWORD
         
         # Общие настройки
-        self.timeout = 30
+        self.timeout = 60  # Увеличиваем общий timeout до 60 секунд
+        self.cloud_request_delay = 1.5  # Задержка между Cloud API запросами (секунды)
+        self.server_request_delay = 0.5  # Задержка между Server API запросами (секунды)
+
+    async def _add_request_delay(self, api_type: IikoApiType):
+        """Добавляет задержку между запросами для предотвращения rate limiting"""
+        if api_type == IikoApiType.CLOUD:
+            await asyncio.sleep(self.cloud_request_delay)
+        elif api_type == IikoApiType.SERVER:
+            await asyncio.sleep(self.server_request_delay)
 
     async def _get_cloud_token(self) -> Optional[str]:
         """Получение токена для Cloud API"""
@@ -99,6 +109,9 @@ class IikoService:
         params: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[Any, Any]]:
         """Универсальный метод для запросов к iiko API"""
+        
+        # Добавляем задержку для предотвращения rate limiting
+        await self._add_request_delay(api_type)
         
         # Получаем токен в зависимости от типа API
         if api_type == IikoApiType.CLOUD:
