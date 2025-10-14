@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from enum import Enum
 import config
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -364,15 +365,104 @@ class IikoService:
         )
 
     async def get_server_employees(self, include_deleted: bool = True) -> Optional[List[Dict[Any, Any]]]:
-        """Получение сотрудников (Server API)"""
+        """Получение сотрудников (Server API) - возвращает XML"""
         params = {}
         if include_deleted:
             params["includeDeleted"] = "true"
-        return await self._make_request(
-            IikoApiType.SERVER,
-            "/resto/api/employees",
-            params=params
-        )
+        
+        # Получаем токен
+        token = await self._get_server_token()
+        if not token:
+            logger.error("Не удалось получить токен для Server API")
+            return None
+        
+        # Добавляем токен в параметры
+        params["key"] = token
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.server_base_url}/resto/api/employees"
+                response = await client.get(url, params=params)
+                
+                if response.status_code == 200:
+                    # Server API возвращает XML, нужно парсить его
+                    xml_content = response.text
+                    return await self._parse_xml_employees(xml_content)
+                else:
+                    logger.error(f"HTTP ошибка server API: {response.status_code} - {response.text}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Ошибка запроса к server API: {e}")
+            return None
+
+    async def _parse_xml_employees(self, xml_content: str) -> Optional[List[Dict[Any, Any]]]:
+        """Парсинг XML ответа с сотрудниками"""
+        try:
+            root = ET.fromstring(xml_content)
+            employees = []
+            
+            for employee_elem in root.findall('employee'):
+                employee_data = {}
+                
+                # Основные поля
+                employee_data['id'] = employee_elem.find('id').text if employee_elem.find('id') is not None else None
+                employee_data['code'] = employee_elem.find('code').text if employee_elem.find('code') is not None else None
+                employee_data['name'] = employee_elem.find('name').text if employee_elem.find('name') is not None else None
+                employee_data['login'] = employee_elem.find('login').text if employee_elem.find('login') is not None else None
+                
+                # Роли
+                employee_data['mainRoleId'] = employee_elem.find('mainRoleId').text if employee_elem.find('mainRoleId') is not None else None
+                employee_data['mainRoleCode'] = employee_elem.find('mainRoleCode').text if employee_elem.find('mainRoleCode') is not None else None
+                
+                # Собираем множественные поля
+                roles_ids = []
+                for role_id in employee_elem.findall('rolesIds'):
+                    if role_id.text:
+                        roles_ids.append(role_id.text)
+                employee_data['rolesIds'] = roles_ids
+                
+                role_codes = []
+                for role_code in employee_elem.findall('roleCodes'):
+                    if role_code.text:
+                        role_codes.append(role_code.text)
+                employee_data['roleCodes'] = role_codes
+                
+                # Отделы
+                employee_data['preferredDepartmentCode'] = employee_elem.find('preferredDepartmentCode').text if employee_elem.find('preferredDepartmentCode') is not None else None
+                
+                department_codes = []
+                for dept_code in employee_elem.findall('departmentCodes'):
+                    if dept_code.text:
+                        department_codes.append(dept_code.text)
+                employee_data['departmentCodes'] = department_codes
+                
+                responsibility_department_codes = []
+                for resp_dept_code in employee_elem.findall('responsibilityDepartmentCodes'):
+                    if resp_dept_code.text:
+                        responsibility_department_codes.append(resp_dept_code.text)
+                employee_data['responsibilityDepartmentCodes'] = responsibility_department_codes
+                
+                # Булевые поля
+                employee_data['deleted'] = employee_elem.find('deleted').text == 'true' if employee_elem.find('deleted') is not None else False
+                employee_data['supplier'] = employee_elem.find('supplier').text == 'true' if employee_elem.find('supplier') is not None else False
+                employee_data['employee'] = employee_elem.find('employee').text == 'true' if employee_elem.find('employee') is not None else False
+                employee_data['client'] = employee_elem.find('client').text == 'true' if employee_elem.find('client') is not None else False
+                employee_data['representsStore'] = employee_elem.find('representsStore').text == 'true' if employee_elem.find('representsStore') is not None else False
+                
+                # Дополнительные поля
+                employee_data['cardNumber'] = employee_elem.find('cardNumber').text if employee_elem.find('cardNumber') is not None else None
+                employee_data['taxpayerIdNumber'] = employee_elem.find('taxpayerIdNumber').text if employee_elem.find('taxpayerIdNumber') is not None else None
+                employee_data['snils'] = employee_elem.find('snils').text if employee_elem.find('snils') is not None else None
+                
+                employees.append(employee_data)
+            
+            logger.info(f"Парсинг XML сотрудников: {len(employees)} записей")
+            return employees
+            
+        except Exception as e:
+            logger.error(f"Ошибка парсинга XML сотрудников: {e}")
+            return None
 
     async def get_server_departments(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение отделов (Server API)"""

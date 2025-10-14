@@ -164,23 +164,38 @@ class IikoParser:
 
     @staticmethod
     def parse_employees(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
-        """Парсинг сотрудников"""
+        """Парсинг сотрудников (Cloud и Server API)"""
         if not data:
             return []
         
         parsed_employees = []
         for employee in data:
-            parsed_employee = {
-                "iiko_id": employee.get("id"),
-                "name": employee.get("name"),
-                "surname": employee.get("surname", ""),
-                "middle_name": employee.get("middleName", ""),
-                "phone": employee.get("phone", ""),
-                "email": employee.get("email", ""),
-                "is_active": not employee.get("isDeleted", False),
-                "created_at": datetime.now(),
-                "updated_at": datetime.now()
-            }
+            # Проверяем, откуда данные (Cloud API или Server API)
+            if "surname" in employee:  # Cloud API
+                parsed_employee = {
+                    "iiko_id": employee.get("id"),
+                    "name": employee.get("name"),
+                    "surname": employee.get("surname", ""),
+                    "middle_name": employee.get("middleName", ""),
+                    "phone": employee.get("phone", ""),
+                    "email": employee.get("email", ""),
+                    "is_active": not employee.get("isDeleted", False),
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now()
+                }
+            else:  # Server API
+                parsed_employee = {
+                    "iiko_id": employee.get("id"),
+                    "name": employee.get("name"),
+                    "surname": "",  # Server API не предоставляет фамилию отдельно
+                    "middle_name": "",  # Server API не предоставляет отчество отдельно
+                    "phone": "",  # Server API не предоставляет телефон
+                    "email": "",  # Server API не предоставляет email
+                    "is_active": not employee.get("deleted", False),
+                    "created_at": datetime.now(),
+                    "updated_at": datetime.now()
+                }
+            
             parsed_employees.append(parsed_employee)
         
         logger.info(f"Парсинг сотрудников: {len(parsed_employees)} записей")
