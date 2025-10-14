@@ -15,7 +15,7 @@ from database.database import get_db
 from models import (
     Organization, Category, Item, Modifier, Employees, 
     Roles, Shift, Table, Terminal, ProductGroup,
-    AttendanceType, RestaurantSection, TerminalGroup, Transaction
+    AttendanceType, RestaurantSection, TerminalGroup, Transaction, Sales
 )
 
 logger = logging.getLogger(__name__)
@@ -528,6 +528,79 @@ class IikoSync:
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации транзакций: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
+    async def sync_sales(self, db: Session, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, int]:
+        """Синхронизация продаж"""  
+        try:
+            if from_date is None:
+                # format 2025-09-30T00:00:00.000
+                from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
+            if to_date is None:
+                to_date = datetime.now().strftime("%Y-%m-%d") + "T00:00:00.000"
+            sales_data = await self.service.get_sales(from_date, to_date)
+            
+            if not sales_data:
+                logger.warning("Не удалось получить данные продаж")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_sales(sales_data)
+            
+            if not parsed_data:
+                logger.warning("Нет данных для синхронизации продаж")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for sale_data in parsed_data:
+                try:
+                    # Ищем существующую продажу
+                    existing_sale = db.query(Sales).filter(
+                        Sales.iiko_id == sale_data["iiko_id"]
+                    ).first()
+                    
+                    # Ищем организацию по Department.Code
+                    department_code = sale_data.get("department_code")
+                    organization_id = None
+                    if department_code:
+                        organization = db.query(Organization).filter(
+                            Organization.code == department_code
+                        ).first()
+                        if organization:
+                            organization_id = organization.id
+                    
+                    # Добавляем organization_id в данные
+                    sale_data["organization_id"] = organization_id
+                    
+                    # Убираем поля, которые не должны обновляться
+                    sale_data.pop("created_at", None)
+                    
+                    if existing_sale:
+                        for key, value in sale_data.items():
+                            setattr(existing_sale, key, value)
+                        existing_sale.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        sale_data["created_at"] = datetime.now()
+                        sale_data["updated_at"] = datetime.now()
+                        new_sale = Sales(**sale_data)
+                        db.add(new_sale)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации продажи {sale_data.get('iiko_id', 'Unknown')}: {e}")
+                    db.rollback()  # Откатываем транзакцию при ошибке
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация продаж завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации продаж: {e}")
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
         

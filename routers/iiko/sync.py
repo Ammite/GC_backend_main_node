@@ -267,3 +267,36 @@ async def sync_transactions(
         
     except Exception as e:
         logger.error(f"Ошибка синхронизации транзакций: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка синхронизации транзакций: {str(e)}",
+            "data": None
+        }
+
+
+@router.post("/sales")
+async def sync_sales(
+    from_date: str = None,
+    to_date: str = None,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Синхронизация продаж с iiko API
+    """
+    try:
+        logger.info(f"Запуск синхронизации продаж")
+        result = await iiko_sync.sync_sales(db, from_date, to_date)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация продаж завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации продаж: {e}")
+        return {
+            "success": False,
+            "message": f"Ошибка синхронизации продаж: {str(e)}",
+            "data": None
+        }
