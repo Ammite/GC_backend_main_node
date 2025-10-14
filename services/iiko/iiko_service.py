@@ -259,11 +259,30 @@ class IikoService:
     async def get_cloud_tables(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение столов ресторана (Cloud API)"""
         if organization_id:
+            # Сначала получаем терминалы для организации
+            terminals_data = await self.get_cloud_terminals(organization_id)
+            if not terminals_data:
+                logger.warning(f"Не удалось получить терминалы для организации {organization_id}")
+                return None
+            
+            # Извлекаем ID терминальных групп
+            terminal_group_ids = []
+            for terminal in terminals_data:
+                if terminal.get("terminalGroupId"):
+                    terminal_group_ids.append(terminal["terminalGroupId"])
+            
+            if not terminal_group_ids:
+                logger.warning(f"Не найдены терминальные группы для организации {organization_id}")
+                return None
+            
             return await self._make_request(
                 IikoApiType.CLOUD,
                 "/api/1/reserve/available_restaurant_sections",
                 method="POST",
-                data={"organizationId": organization_id}
+                data={
+                    "organizationId": organization_id,
+                    "terminalGroupIds": terminal_group_ids
+                }
             )
         else:
             # Если organization_id не указан, получаем столы из всех организаций
@@ -275,14 +294,9 @@ class IikoService:
             for org in organizations:
                 org_id = org.get("id")
                 if org_id:
-                    tables = await self._make_request(
-                        IikoApiType.CLOUD,
-                        "/api/1/reserve/available_restaurant_sections",
-                        method="POST",
-                        data={"organizationId": org_id}
-                    )
-                    if tables:
-                        all_tables.extend(tables)
+                    tables_data = await self.get_cloud_tables(org_id)  # Рекурсивный вызов
+                    if tables_data:
+                        all_tables.extend(tables_data)
             
             return all_tables
 
@@ -464,6 +478,54 @@ class IikoService:
             logger.error(f"Ошибка парсинга XML сотрудников: {e}")
             return None
 
+    async def _parse_xml_roles(self, xml_content: str) -> Optional[List[Dict[Any, Any]]]:
+        """Парсинг XML ответа с ролями"""
+        try:
+            root = ET.fromstring(xml_content)
+            roles = []
+            
+            for role_elem in root.findall('role'):
+                role_data = {}
+                
+                # Основные поля
+                role_data['id'] = role_elem.find('id').text if role_elem.find('id') is not None else None
+                role_data['code'] = role_elem.find('code').text if role_elem.find('code') is not None else None
+                role_data['name'] = role_elem.find('name').text if role_elem.find('name') is not None else None
+                
+                # Финансовые поля
+                payment_per_hour = role_elem.find('paymentPerHour')
+                if payment_per_hour is not None and payment_per_hour.text:
+                    try:
+                        role_data['paymentPerHour'] = float(payment_per_hour.text)
+                    except ValueError:
+                        role_data['paymentPerHour'] = 0.0
+                else:
+                    role_data['paymentPerHour'] = 0.0
+                
+                steady_salary = role_elem.find('steadySalary')
+                if steady_salary is not None and steady_salary.text:
+                    try:
+                        role_data['steadySalary'] = float(steady_salary.text)
+                    except ValueError:
+                        role_data['steadySalary'] = 0.0
+                else:
+                    role_data['steadySalary'] = 0.0
+                
+                # Тип расписания
+                role_data['scheduleType'] = role_elem.find('scheduleType').text if role_elem.find('scheduleType') is not None else None
+                
+                # Булевое поле
+                role_data['deleted'] = role_elem.find('deleted').text == 'true' if role_elem.find('deleted') is not None else False
+                
+                roles.append(role_data)
+            
+            logger.info(f"Парсинг XML ролей: {len(roles)} записей")
+            return roles
+            
+        except Exception as e:
+            logger.error(f"Ошибка парсинга XML ролей: {e}")
+            return None
+
     async def get_server_departments(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение отделов (Server API)"""
         return await self._make_request(
@@ -472,11 +534,30 @@ class IikoService:
         )
 
     async def get_server_roles(self) -> Optional[List[Dict[Any, Any]]]:
-        """Получение ролей сотрудников (Server API)"""
-        return await self._make_request(
-            IikoApiType.SERVER,
-            "/resto/api/employees/roles"
-        )
+        """Получение ролей сотрудников (Server API) - возвращает XML"""
+        # Получаем токен
+        token = await self._get_server_token()
+        if not token:
+            logger.error("Не удалось получить токен для Server API")
+            return None
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.server_base_url}/resto/api/employees/roles"
+                params = {"key": token}
+                response = await client.get(url, params=params)
+                
+                if response.status_code == 200:
+                    # Server API возвращает XML, нужно парсить его
+                    xml_content = response.text
+                    return await self._parse_xml_roles(xml_content)
+                else:
+                    logger.error(f"HTTP ошибка server API: {response.status_code} - {response.text}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Ошибка запроса к server API: {e}")
+            return None
 
     async def get_server_schedule_types(self) -> Optional[List[Dict[Any, Any]]]:
         """Получение типов расписания (Server API)"""

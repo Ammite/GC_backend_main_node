@@ -224,7 +224,7 @@ class IikoParser:
 
     @staticmethod
     def parse_roles(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
-        """Парсинг ролей"""
+        """Парсинг ролей (Server API)"""
         if not data:
             return []
         
@@ -233,8 +233,8 @@ class IikoParser:
             parsed_role = {
                 "iiko_id": role.get("id"),
                 "name": role.get("name"),
-                "description": role.get("description", ""),
-                "is_active": not role.get("isDeleted", False),
+                "description": role.get("code", ""),  # Используем code как описание
+                "is_active": not role.get("deleted", False),
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
             }
