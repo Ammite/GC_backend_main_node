@@ -257,13 +257,13 @@ class IikoSync:
             logger.info("Запуск синхронизации товаров Server API")
             
             # Получаем данные из Server API
-            server_data = await self.iiko_service.get_server_menu()
+            server_data = await self.service.get_server_menu()
             if not server_data:
                 logger.warning("Нет данных Server API")
                 return {"created": 0, "updated": 0, "errors": 0}
             
             # Парсим данные
-            parsed_items = self.iiko_parser.parse_items_server(server_data)
+            parsed_items = self.parser.parse_items_server(server_data)
             
             created = 0
             updated = 0
