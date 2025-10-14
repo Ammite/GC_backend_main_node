@@ -215,14 +215,18 @@ class IikoSync:
             
             for item_data in parsed_items:
                 try:
-                    # Ищем существующий товар по iiko_id и organization_id
+                    # Ищем существующий товар только по iiko_id (он уникальный)
                     existing_item = db.query(Item).filter(
-                        Item.iiko_id == item_data["iiko_id"],
-                        Item.organization_id == item_data["organization_id"]
+                        Item.iiko_id == item_data["iiko_id"]
                     ).first()
                     
                     if existing_item:
-                        # Обновляем существующий товар
+                        # Товар уже существует - обновляем его
+                        # Проверяем, если data_source отличается, ставим is_duplicate = True
+                        if existing_item.data_source != item_data["data_source"]:
+                            item_data["is_duplicate"] = True
+                        
+                        # Обновляем все поля
                         for key, value in item_data.items():
                             if key not in ["created_at"]:
                                 setattr(existing_item, key, value)
@@ -253,13 +257,13 @@ class IikoSync:
             logger.info("Запуск синхронизации товаров Server API")
             
             # Получаем данные из Server API
-            server_data = await self.service.get_server_menu()
+            server_data = await self.iiko_service.get_server_menu()
             if not server_data:
                 logger.warning("Нет данных Server API")
                 return {"created": 0, "updated": 0, "errors": 0}
             
             # Парсим данные
-            parsed_items = self.parser.parse_items_server(server_data)
+            parsed_items = self.iiko_parser.parse_items_server(server_data)
             
             created = 0
             updated = 0
@@ -273,21 +277,17 @@ class IikoSync:
                     ).first()
                     
                     if existing_item:
-                        # Если товар уже существует и у него есть organization_id, создаем дубликат
-                        if existing_item.organization_id is not None:
-                            # Создаем дубликат с флагом is_duplicate = True
+                        # Товар уже существует - обновляем его
+                        # Проверяем, если data_source отличается, ставим is_duplicate = True
+                        if existing_item.data_source != item_data["data_source"]:
                             item_data["is_duplicate"] = True
-                            item_data["organization_id"] = None  # Server API не привязан к организации
-                            new_item = Item(**item_data)
-                            db.add(new_item)
-                            created += 1
-                        else:
-                            # Если organization_id пустой, обновляем
-                            for key, value in item_data.items():
-                                if key not in ["created_at"]:
-                                    setattr(existing_item, key, value)
-                            existing_item.updated_at = datetime.now()
-                            updated += 1
+                        
+                        # Обновляем все поля
+                        for key, value in item_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_item, key, value)
+                        existing_item.updated_at = datetime.now()
+                        updated += 1
                     else:
                         # Создаем новый товар
                         new_item = Item(**item_data)
