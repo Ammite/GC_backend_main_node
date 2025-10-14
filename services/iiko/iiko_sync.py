@@ -357,18 +357,33 @@ class IikoSync:
             
             for terminal_data in parsed_data:
                 try:
+                    # Находим организацию по iiko_id
+                    org_iiko_id = terminal_data.get("organization_id")
+                    organization = None
+                    if org_iiko_id:
+                        organization = db.query(Organization).filter(
+                            Organization.iiko_id == org_iiko_id
+                        ).first()
+                    
+                    # Убираем organization_id из данных, так как это iiko_id
+                    terminal_data_clean = {k: v for k, v in terminal_data.items() if k != "organization_id"}
+                    
                     existing_terminal = db.query(Terminal).filter(
                         Terminal.iiko_id == terminal_data["iiko_id"]
                     ).first()
                     
                     if existing_terminal:
-                        for key, value in terminal_data.items():
+                        for key, value in terminal_data_clean.items():
                             if key not in ["created_at"]:
                                 setattr(existing_terminal, key, value)
+                        if organization:
+                            existing_terminal.organization_id = organization.id
                         existing_terminal.updated_at = datetime.now()
                         updated += 1
                     else:
-                        new_terminal = Terminal(**terminal_data)
+                        new_terminal = Terminal(**terminal_data_clean)
+                        if organization:
+                            new_terminal.organization_id = organization.id
                         db.add(new_terminal)
                         created += 1
                         

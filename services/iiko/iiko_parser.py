@@ -302,9 +302,11 @@ class IikoParser:
         for terminal in data:
             parsed_terminal = {
                 "iiko_id": terminal.get("id"),
+                "organization_id": terminal.get("organizationId"),
                 "name": terminal.get("name"),
-                "description": terminal.get("description", ""),
-                "is_active": not terminal.get("isDeleted", False),
+                "address": terminal.get("address", ""),
+                "time_zone": terminal.get("timeZone", ""),
+                "is_active": True,  # По умолчанию активен
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
             }

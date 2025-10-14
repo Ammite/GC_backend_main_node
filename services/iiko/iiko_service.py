@@ -288,12 +288,20 @@ class IikoService:
     async def get_cloud_terminals(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение терминалов (Cloud API)"""
         if organization_id:
-            return await self._make_request(
+            result = await self._make_request(
                 IikoApiType.CLOUD,
                 "/api/1/terminal_groups",
                 method="POST",
                 data={"organizationIds": [organization_id]}
             )
+            # Извлекаем терминалы из структуры ответа
+            if result and "terminalGroups" in result:
+                terminals = []
+                for group in result["terminalGroups"]:
+                    if "items" in group:
+                        terminals.extend(group["items"])
+                return terminals
+            return None
         else:
             # Если organization_id не указан, получаем терминалы из всех организаций
             organizations = await self.get_organizations()
@@ -304,12 +312,7 @@ class IikoService:
             for org in organizations:
                 org_id = org.get("id")
                 if org_id:
-                    terminals = await self._make_request(
-                        IikoApiType.CLOUD,
-                        "/api/1/terminal_groups",
-                        method="POST",
-                        data={"organizationIds": [org_id]}
-                    )
+                    terminals = await self.get_cloud_terminals(org_id)
                     if terminals:
                         all_terminals.extend(terminals)
             
