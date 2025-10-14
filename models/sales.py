@@ -46,14 +46,14 @@ class Sales(Base):
     open_date_typed = Column(Date, nullable=True)  # OpenDate.Typed
     
     # Временные группировки
-    year_open = Column(String(10), nullable=True)  # YearOpen
-    quarter_open = Column(String(10), nullable=True)  # QuarterOpen
-    month_open = Column(String(20), nullable=True)  # Mounth
-    week_in_year_open = Column(String(10), nullable=True)  # WeekInYearOpen
-    week_in_month_open = Column(String(10), nullable=True)  # WeekInMonthOpen
+    year_open = Column(String(50), nullable=True)  # YearOpen
+    quarter_open = Column(String(50), nullable=True)  # QuarterOpen
+    month_open = Column(String(50), nullable=True)  # Mounth
+    week_in_year_open = Column(String(50), nullable=True)  # WeekInYearOpen
+    week_in_month_open = Column(String(50), nullable=True)  # WeekInMonthOpen
     day_of_week_open = Column(String(50), nullable=True)  # DayOfWeekOpen
-    hour_open = Column(String(10), nullable=True)  # HourOpen
-    hour_close = Column(String(10), nullable=True)  # HourClose
+    hour_open = Column(String(50), nullable=True)  # HourOpen
+    hour_close = Column(String(50), nullable=True)  # HourClose
     
     # Блюдо/товар
     dish_id = Column(String(50), nullable=True)  # DishId
@@ -185,7 +185,7 @@ class Sales(Base):
     fiscal_cheque_number = Column(Integer, nullable=True)  # FiscalChequeNumber
     
     # Валюты
-    currencies_currency = Column(String(10), nullable=True)  # Currencies.Currency
+    currencies_currency = Column(String(50), nullable=True)  # Currencies.Currency
     currencies_currency_rate = Column(Numeric(10, 4), nullable=True)  # Currencies.CurrencyRate
     currencies_sum_in_currency = Column(Numeric(15, 2), nullable=True)  # Currencies.SumInCurrency
     
@@ -355,8 +355,8 @@ class Sales(Base):
     writeoff_user = Column(String(255), nullable=True)  # WriteoffUser
     
     # Статусы
-    banquet = Column(String(10), nullable=True)  # Banquet
-    storned = Column(String(10), nullable=True)  # Storned
+    banquet = Column(String(50), nullable=True)  # Banquet
+    storned = Column(String(50), nullable=True)  # Storned
     deleted_with_writeoff = Column(String(50), nullable=True)  # DeletedWithWriteoff
     deletion_comment = Column(Text, nullable=True)  # DeletionComment
     
@@ -373,8 +373,8 @@ class Sales(Base):
     dish_service_print_time_open_to_last_print_duration = Column(Integer, nullable=True)  # DishServicePrintTime.OpenToLastPrintDuration
     
     # Временные группировки по минутам
-    open_time_minutes15 = Column(String(10), nullable=True)  # OpenTime.Minutes15
-    close_time_minutes15 = Column(String(10), nullable=True)  # CloseTime.Minutes15
+    open_time_minutes15 = Column(String(50), nullable=True)  # OpenTime.Minutes15
+    close_time_minutes15 = Column(String(50), nullable=True)  # CloseTime.Minutes15
     
     # Внешние данные
     public_external_data = Column(Text, nullable=True)  # PublicExternalData
