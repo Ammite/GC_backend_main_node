@@ -423,8 +423,8 @@ class IikoParser:
         for transaction in data:
             parsed_transaction = {
                 # Основные поля
-                "iiko_id": transaction.get("Id"),
-                "order_id": transaction.get("OrderId"),
+                "iiko_id": _safe_get(transaction, "Id"),
+                "order_id": _safe_get(transaction, "OrderId"),
                 "order_num": transaction.get("OrderNum"),
                 "document": transaction.get("Document"),
                 
@@ -453,10 +453,10 @@ class IikoParser:
                 "transaction_side": transaction.get("TransactionSide"),
                 
                 # Номенклатура
-                "product_id": transaction.get("Product.Id"),
+                "product_id": _safe_get(transaction, "Product.Id"),
                 "product_name": transaction.get("Product.Name"),
                 "product_num": transaction.get("Product.Num"),
-                "product_category_id": transaction.get("Product.Category.Id"),
+                "product_category_id": _safe_get(transaction, "Product.Category.Id"),
                 "product_category": transaction.get("Product.Category"),
                 "product_type": transaction.get("Product.Type"),
                 "product_measure_unit": transaction.get("Product.MeasureUnit"),
@@ -471,22 +471,22 @@ class IikoParser:
                 "product_hierarchy": transaction.get("Product.Hierarchy"),
                 
                 # Пользовательские свойства номенклатуры
-                "product_tag_id": transaction.get("Product.Tag.Id"),
+                "product_tag_id": _safe_get(transaction, "Product.Tag.Id"),
                 "product_tag_name": transaction.get("Product.Tag.Name"),
                 "product_tags_ids_combo": transaction.get("Product.Tags.IdsCombo"),
                 "product_tags_names_combo": transaction.get("Product.Tags.NamesCombo"),
                 
                 # Алкогольная продукция
                 "product_alcohol_class": transaction.get("Product.AlcoholClass"),
-                "product_alcohol_class_code": transaction.get("Product.AlcoholClass.Code"),
+                "product_alcohol_class_code": _safe_get(transaction, "Product.AlcoholClass.Code"),
                 "product_alcohol_class_group": transaction.get("Product.AlcoholClass.Group"),
                 "product_alcohol_class_type": transaction.get("Product.AlcoholClass.Type"),
                 
                 # Корреспондент (контрагент)
-                "contr_product_id": transaction.get("Contr-Product.Id"),
+                "contr_product_id": _safe_get(transaction, "Contr-Product.Id"),
                 "contr_product_name": transaction.get("Contr-Product.Name"),
                 "contr_product_num": transaction.get("Contr-Product.Num"),
-                "contr_product_category_id": transaction.get("Contr-Product.Category.Id"),
+                "contr_product_category_id": _safe_get(transaction, "Contr-Product.Category.Id"),
                 "contr_product_category": transaction.get("Contr-Product.Category"),
                 "contr_product_type": transaction.get("Contr-Product.Type"),
                 "contr_product_measure_unit": transaction.get("Contr-Product.MeasureUnit"),
@@ -504,15 +504,15 @@ class IikoParser:
                 
                 # Алкогольная продукция корреспондента
                 "contr_product_alcohol_class": transaction.get("Contr-Product.AlcoholClass"),
-                "contr_product_alcohol_class_code": transaction.get("Contr-Product.AlcoholClass.Code"),
+                "contr_product_alcohol_class_code": _safe_get(transaction, "Contr-Product.AlcoholClass.Code"),
                 "contr_product_alcohol_class_group": transaction.get("Contr-Product.AlcoholClass.Group"),
                 "contr_product_alcohol_class_type": transaction.get("Contr-Product.AlcoholClass.Type"),
                 "contr_product_cooking_place_type": transaction.get("Contr-Product.CookingPlaceType"),
                 
                 # Счета
-                "account_id": transaction.get("Account.Id"),
+                "account_id": _safe_get(transaction, "Account.Id"),
                 "account_name": transaction.get("Account.Name"),
-                "account_code": transaction.get("Account.Code"),
+                "account_code": _safe_get(transaction, "Account.Code"),
                 "account_type": transaction.get("Account.Type"),
                 "account_group": transaction.get("Account.Group"),
                 "account_store_or_account": transaction.get("Account.StoreOrAccount"),
@@ -527,12 +527,12 @@ class IikoParser:
                 
                 # Корреспондентские счета
                 "contr_account_name": transaction.get("Contr-Account.Name"),
-                "contr_account_code": transaction.get("Contr-Account.Code"),
+                "contr_account_code": _safe_get(transaction, "Contr-Account.Code"),
                 "contr_account_type": transaction.get("Contr-Account.Type"),
                 "contr_account_group": transaction.get("Contr-Account.Group"),
                 
                 # Контрагенты
-                "counteragent_id": transaction.get("Counteragent.Id"),
+                "counteragent_id": _safe_get(transaction, "Counteragent.Id"),
                 "counteragent_name": transaction.get("Counteragent.Name"),
                 
                 # Организация и подразделения
@@ -546,14 +546,14 @@ class IikoParser:
                 "department_category5": transaction.get("Department.Category5"),
                 
                 # Сессии и кассы
-                "session_group_id": transaction.get("Session.GroupId"),
+                "session_group_id": _safe_get(transaction, "Session.GroupId"),
                 "session_group": transaction.get("Session.Group"),
                 "session_cash_register": transaction.get("Session.CashRegister"),
                 "session_restaurant_section": transaction.get("Session.RestaurantSection"),
                 
                 # Концепции
                 "conception": transaction.get("Conception"),
-                "conception_code": transaction.get("Conception.Code"),
+                "conception_code": _safe_get(transaction, "Conception.Code"),
                 
                 # Склады
                 "store": transaction.get("Store"),
@@ -603,12 +603,12 @@ class IikoParser:
         for sale in data:
             parsed_sale = {
                 # Основные поля
-                "iiko_id": sale.get("ItemSaleEvent.Id"),
+                "iiko_id": _safe_get(sale, "ItemSaleEvent.Id"),
                 
                 # Организация и подразделения
                 "department": sale.get("Department"),
                 "department_code": sale.get("Department.Code"),  # Это поле будем использовать для поиска организации
-                "department_id": sale.get("Department.Id"),
+                "department_id": _safe_get(sale, "Department.Id"),
                 "department_category1": sale.get("Department.Category1"),
                 "department_category2": sale.get("Department.Category2"),
                 "department_category3": sale.get("Department.Category3"),
@@ -617,14 +617,14 @@ class IikoParser:
                 
                 # Концепция
                 "conception": sale.get("Conception"),
-                "conception_code": sale.get("Conception.Code"),
+                "conception_code": _safe_get(sale, "Conception.Code"),
                 
                 # Заказ
-                "order_id": sale.get("UniqOrderId.Id"),
+                "order_id": _safe_get(sale, "UniqOrderId.Id"),
                 "order_num": sale.get("OrderNum"),
                 "order_items": sale.get("OrderItems"),
                 "order_type": sale.get("OrderType"),
-                "order_type_id": sale.get("OrderType.Id"),
+                "order_type_id": _safe_get(sale, "OrderType.Id"),
                 "order_service_type": sale.get("OrderServiceType"),
                 "order_comment": sale.get("OrderComment"),
                 "order_deleted": sale.get("OrderDeleted"),
@@ -646,10 +646,10 @@ class IikoParser:
                 "hour_close": sale.get("HourClose"),
                 
                 # Блюдо/товар
-                "dish_id": sale.get("DishId"),
+                "dish_id": _safe_get(sale, "DishId"),
                 "dish_name": sale.get("DishName"),
                 "dish_code": sale.get("DishCode"),
-                "dish_code_quick": sale.get("DishCode.Quick"),
+                "dish_code_quick": _safe_get(sale, "DishCode.Quick"),
                 "dish_foreign_name": sale.get("DishForeignName"),
                 "dish_full_name": sale.get("DishFullName"),
                 "dish_type": sale.get("DishType"),
@@ -659,13 +659,13 @@ class IikoParser:
                 
                 # Категория блюда
                 "dish_category": sale.get("DishCategory"),
-                "dish_category_id": sale.get("DishCategory.Id"),
+                "dish_category_id": _safe_get(sale, "DishCategory.Id"),
                 "dish_category_accounting": sale.get("DishCategory.Accounting"),
-                "dish_category_accounting_id": sale.get("DishCategory.Accounting.Id"),
+                "dish_category_accounting_id": _safe_get(sale, "DishCategory.Accounting.Id"),
                 
                 # Группа блюда
                 "dish_group": sale.get("DishGroup"),
-                "dish_group_id": sale.get("DishGroup.Id"),
+                "dish_group_id": _safe_get(sale, "DishGroup.Id"),
                 "dish_group_num": sale.get("DishGroup.Num"),
                 "dish_group_hierarchy": sale.get("DishGroup.Hierarchy"),
                 "dish_group_top_parent": sale.get("DishGroup.TopParent"),
@@ -673,21 +673,21 @@ class IikoParser:
                 "dish_group_third_parent": sale.get("DishGroup.ThirdParent"),
                 
                 # Теги блюда
-                "dish_tag_id": sale.get("DishTag.Id"),
+                "dish_tag_id": _safe_get(sale, "DishTag.Id"),
                 "dish_tag_name": sale.get("DishTag.Name"),
                 "dish_tags_ids_combo": sale.get("DishTags.IdsCombo"),
                 "dish_tags_names_combo": sale.get("DishTags.NamesCombo"),
                 
                 # Налоговая категория
-                "dish_tax_category_id": sale.get("DishTaxCategory.Id"),
+                "dish_tax_category_id": _safe_get(sale, "DishTaxCategory.Id"),
                 "dish_tax_category_name": sale.get("DishTaxCategory.Name"),
                 
                 # Размер блюда
-                "dish_size_id": sale.get("DishSize.Id"),
+                "dish_size_id": _safe_get(sale, "DishSize.Id"),
                 "dish_size_name": sale.get("DishSize.Name"),
                 "dish_size_short_name": sale.get("DishSize.ShortName"),
                 "dish_size_priority": sale.get("DishSize.Priority"),
-                "dish_size_scale_id": sale.get("DishSize.Scale.Id"),
+                "dish_size_scale_id": _safe_get(sale, "DishSize.Scale.Id"),
                 "dish_size_scale_name": sale.get("DishSize.Scale.Name"),
                 
                 # Финансовые поля
@@ -725,7 +725,7 @@ class IikoParser:
                 
                 # Ресторанная секция
                 "restaurant_section": sale.get("RestaurantSection"),
-                "restaurant_section_id": sale.get("RestaurantSection.Id"),
+                "restaurant_section_id": _safe_get(sale, "RestaurantSection.Id"),
                 
                 # Стол
                 "table_num": sale.get("TableNum"),
@@ -737,15 +737,15 @@ class IikoParser:
                 # Официант
                 "waiter_name": sale.get("WaiterName"),
                 "waiter_name_id": sale.get("WaiterName.ID"),
-                "order_waiter_id": sale.get("OrderWaiter.Id"),
+                "order_waiter_id": _safe_get(sale, "OrderWaiter.Id"),
                 "order_waiter_name": sale.get("OrderWaiter.Name"),
-                "waiter_team_id": sale.get("WaiterTeam.Id"),
+                "waiter_team_id": _safe_get(sale, "WaiterTeam.Id"),
                 "waiter_team_name": sale.get("WaiterTeam.Name"),
                 
                 # Кассир
                 "cashier": sale.get("Cashier"),
-                "cashier_code": sale.get("Cashier.Code"),
-                "cashier_id": sale.get("Cashier.Id"),
+                "cashier_code": _safe_get(sale, "Cashier.Code"),
+                "cashier_id": _safe_get(sale, "Cashier.Id"),
                 
                 # Пользователь авторизации
                 "auth_user": sale.get("AuthUser"),

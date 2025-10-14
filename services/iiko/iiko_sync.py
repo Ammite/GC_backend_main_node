@@ -458,6 +458,63 @@ class IikoSync:
             logger.error(f"Ошибка полной синхронизации: {e}")
             return {"error": str(e)}
     
+    def _find_existing_transaction(self, db: Session, trans_data: Dict[str, Any]) -> Optional[Transaction]:
+        """Поиск существующей транзакции по составному ключу"""
+        # Вариант 1: order_id + product_id + date_time + amount
+        if trans_data.get("order_id") and trans_data.get("product_id") and trans_data.get("date_time") and trans_data.get("amount"):
+            existing = db.query(Transaction).filter(
+                Transaction.order_id == trans_data["order_id"],
+                Transaction.product_id == trans_data["product_id"],
+                Transaction.date_time == trans_data["date_time"],
+                Transaction.amount == trans_data["amount"]
+            ).first()
+            if existing:
+                return existing
+        
+        # Вариант 2: order_num + product_id + date_time + amount
+        if trans_data.get("order_num") and trans_data.get("product_id") and trans_data.get("date_time") and trans_data.get("amount"):
+            existing = db.query(Transaction).filter(
+                Transaction.order_num == trans_data["order_num"],
+                Transaction.product_id == trans_data["product_id"],
+                Transaction.date_time == trans_data["date_time"],
+                Transaction.amount == trans_data["amount"]
+            ).first()
+            if existing:
+                return existing
+        
+        # Вариант 3: document + product_id + date_time + amount
+        if trans_data.get("document") and trans_data.get("product_id") and trans_data.get("date_time") and trans_data.get("amount"):
+            existing = db.query(Transaction).filter(
+                Transaction.document == trans_data["document"],
+                Transaction.product_id == trans_data["product_id"],
+                Transaction.date_time == trans_data["date_time"],
+                Transaction.amount == trans_data["amount"]
+            ).first()
+            if existing:
+                return existing
+        
+        # Вариант 4: order_id + date_time + amount (если product_id отсутствует)
+        if trans_data.get("order_id") and trans_data.get("date_time") and trans_data.get("amount"):
+            existing = db.query(Transaction).filter(
+                Transaction.order_id == trans_data["order_id"],
+                Transaction.date_time == trans_data["date_time"],
+                Transaction.amount == trans_data["amount"]
+            ).first()
+            if existing:
+                return existing
+        
+        # Вариант 5: order_num + date_time + amount (если product_id отсутствует)
+        if trans_data.get("order_num") and trans_data.get("date_time") and trans_data.get("amount"):
+            existing = db.query(Transaction).filter(
+                Transaction.order_num == trans_data["order_num"],
+                Transaction.date_time == trans_data["date_time"],
+                Transaction.amount == trans_data["amount"]
+            ).first()
+            if existing:
+                return existing
+        
+        return None
+
     async def sync_transactions(self, db: Session, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, int]:
         """Синхронизация транзакций"""  
         try:
@@ -484,10 +541,13 @@ class IikoSync:
             
             for trans_data in parsed_data:
                 try:
-                    # Ищем существующую транзакцию
-                    existing_trans = db.query(Transaction).filter(
-                        Transaction.iiko_id == trans_data["iiko_id"]
-                    ).first()
+                    # Ищем существующую транзакцию по составному ключу
+                    existing_trans = self._find_existing_transaction(db, trans_data)
+                    
+                    if not existing_trans:
+                        logger.warning(f"Не удалось найти уникальный ключ для транзакции: order_id={trans_data.get('order_id')}, order_num={trans_data.get('order_num')}, product_id={trans_data.get('product_id')}, date_time={trans_data.get('date_time')}, amount={trans_data.get('amount')}")
+                    else:
+                        logger.debug(f"Найдена существующая транзакция для обновления")
                     
                     # Ищем организацию по Department.Code
                     department_code = trans_data.get("department_code")
@@ -518,7 +578,7 @@ class IikoSync:
                         created += 1
                         
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации транзакции {trans_data.get('iiko_id', 'Unknown')}: {e}")
+                    logger.error(f"Ошибка синхронизации транзакции order_id={trans_data.get('order_id', 'Unknown')}, order_num={trans_data.get('order_num', 'Unknown')}: {e}")
                     db.rollback()  # Откатываем транзакцию при ошибке
                     errors += 1
             
