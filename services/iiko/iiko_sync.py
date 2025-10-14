@@ -389,6 +389,7 @@ class IikoSync:
                         
                 except Exception as e:
                     logger.error(f"Ошибка синхронизации терминала {terminal_data.get('name')}: {e}")
+                    db.rollback()  # Откатываем транзакцию при ошибке
                     errors += 1
             
             db.commit()
