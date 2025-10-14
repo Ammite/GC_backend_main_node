@@ -14,13 +14,14 @@ from .employees import Employees
 from .menu_category import MenuCategory
 from .modifier import Modifier
 from .order_types import OrderType
-from .organizations import Organization
+from .organization import Organization
 from .product_group import ProductGroup
 from .restaurant_sections import RestaurantSection
 from .schedule_types import ScheduleType
 from .tables import Table
 from .terminal_groups import TerminalGroup
 from .terminals import Terminal
+from .transaction import Transaction
 
 __all__ = [
     "DOrder",
@@ -46,6 +47,7 @@ __all__ = [
     "Table",
     "TerminalGroup",
     "Terminal",
+    "Transaction",
 ]
 
 

@@ -19,3 +19,4 @@ class Organization(Base):
     d_orders = relationship("DOrder", back_populates="organization")
     terminal_groups = relationship("TerminalGroup", back_populates="organization")
     terminals = relationship("Terminal", back_populates="organization")
+    transactions = relationship("Transaction", back_populates="organization")
