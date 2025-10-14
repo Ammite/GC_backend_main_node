@@ -207,14 +207,14 @@ class IikoParser:
                 
                 # Роли и должности
                 "main_role_iiko_id": employee.get("mainRoleId"),
-                "roles_iiko_ids": employee.get("rolesIds", []),
+                "roles_iiko_ids": employee.get("rolesIds", []) if isinstance(employee.get("rolesIds"), list) else [],
                 "main_role_code": employee.get("mainRoleCode", ""),
-                "role_codes": employee.get("roleCodes", []),
+                "role_codes": employee.get("roleCodes", []) if isinstance(employee.get("roleCodes"), list) else [],
                 
                 # Подразделения
                 "preferred_department_code": employee.get("preferredDepartmentCode", ""),
-                "department_codes": employee.get("departmentCodes", []),
-                "responsibility_department_codes": employee.get("responsibilityDepartmentCodes", []),
+                "department_codes": employee.get("departmentCodes", []) if isinstance(employee.get("departmentCodes"), list) else [],
+                "responsibility_department_codes": employee.get("responsibilityDepartmentCodes", []) if isinstance(employee.get("responsibilityDepartmentCodes"), list) else [],
                 
                 # Статусы
                 "deleted": _parse_boolean(employee.get("deleted", "false")),
@@ -414,46 +414,46 @@ class IikoParser:
         parsed_transactions = []
         for transaction in data:
             # Извлекаем данные о сумме
-            sum_data = transaction.get("Sum", {})
-            start_balance = transaction.get("StartBalance", {})
-            final_balance = transaction.get("FinalBalance", {})
-            amount_data = transaction.get("Amount", {})
+            sum_data = transaction.get("Sum", {}) if isinstance(transaction.get("Sum"), dict) else {}
+            start_balance = transaction.get("StartBalance", {}) if isinstance(transaction.get("StartBalance"), dict) else {}
+            final_balance = transaction.get("FinalBalance", {}) if isinstance(transaction.get("FinalBalance"), dict) else {}
+            amount_data = transaction.get("Amount", {}) if isinstance(transaction.get("Amount"), dict) else {}
             
             # Извлекаем данные о продукте
-            product_data = transaction.get("Product", {})
-            product_category = product_data.get("Category", {})
-            product_tag = product_data.get("Tag", {})
-            product_tags = product_data.get("Tags", {})
-            product_alcohol_class = product_data.get("AlcoholClass", {})
+            product_data = transaction.get("Product", {}) if isinstance(transaction.get("Product"), dict) else {}
+            product_category = product_data.get("Category", {}) if isinstance(product_data.get("Category"), dict) else {}
+            product_tag = product_data.get("Tag", {}) if isinstance(product_data.get("Tag"), dict) else {}
+            product_tags = product_data.get("Tags", {}) if isinstance(product_data.get("Tags"), dict) else {}
+            product_alcohol_class = product_data.get("AlcoholClass", {}) if isinstance(product_data.get("AlcoholClass"), dict) else {}
             
             # Извлекаем данные о корреспонденте
-            contr_product_data = transaction.get("Contr-Product", {})
-            contr_product_category = contr_product_data.get("Category", {})
-            contr_product_tags = contr_product_data.get("Tags", {})
-            contr_product_alcohol_class = contr_product_data.get("AlcoholClass", {})
+            contr_product_data = transaction.get("Contr-Product", {}) if isinstance(transaction.get("Contr-Product"), dict) else {}
+            contr_product_category = contr_product_data.get("Category", {}) if isinstance(contr_product_data.get("Category"), dict) else {}
+            contr_product_tags = contr_product_data.get("Tags", {}) if isinstance(contr_product_data.get("Tags"), dict) else {}
+            contr_product_alcohol_class = contr_product_data.get("AlcoholClass", {}) if isinstance(contr_product_data.get("AlcoholClass"), dict) else {}
             
             # Извлекаем данные о счетах
-            account_data = transaction.get("Account", {})
-            contr_account_data = transaction.get("Contr-Account", {})
+            account_data = transaction.get("Account", {}) if isinstance(transaction.get("Account"), dict) else {}
+            contr_account_data = transaction.get("Contr-Account", {}) if isinstance(transaction.get("Contr-Account"), dict) else {}
             
             # Извлекаем данные о контрагенте
-            counteragent_data = transaction.get("Counteragent", {})
+            counteragent_data = transaction.get("Counteragent", {}) if isinstance(transaction.get("Counteragent"), dict) else {}
             
             # Извлекаем данные о подразделении
-            department_data = transaction.get("Department", {})
+            department_data = transaction.get("Department", {}) if isinstance(transaction.get("Department"), dict) else {}
             
             # Извлекаем данные о сессии
-            session_data = transaction.get("Session", {})
+            session_data = transaction.get("Session", {}) if isinstance(transaction.get("Session"), dict) else {}
             
             # Извлекаем данные о концепции
-            conception_data = transaction.get("Conception", {})
+            conception_data = transaction.get("Conception", {}) if isinstance(transaction.get("Conception"), dict) else {}
             
             # Извлекаем данные о движении денежных средств
-            cash_flow_category_data = transaction.get("CashFlowCategory", {})
+            cash_flow_category_data = transaction.get("CashFlowCategory", {}) if isinstance(transaction.get("CashFlowCategory"), dict) else {}
             
             # Извлекаем данные о дате
-            date_time_data = transaction.get("DateTime", {})
-            date_secondary_data = transaction.get("DateSecondary", {})
+            date_time_data = transaction.get("DateTime", {}) if isinstance(transaction.get("DateTime"), dict) else {}
+            date_secondary_data = transaction.get("DateSecondary", {}) if isinstance(transaction.get("DateSecondary"), dict) else {}
             
             parsed_transaction = {
                 # Основные поля
@@ -636,98 +636,98 @@ class IikoParser:
         parsed_sales = []
         for sale in data:
             # Извлекаем данные о валютах
-            currencies_data = sale.get("Currencies", {})
-            currencies_sum_in_currency = currencies_data.get("SumInCurrency", {})
+            currencies_data = sale.get("Currencies", {}) if isinstance(sale.get("Currencies"), dict) else {}
+            currencies_sum_in_currency = currencies_data.get("SumInCurrency", {}) if isinstance(currencies_data.get("SumInCurrency"), dict) else {}
             
             # Извлекаем данные о блюде
-            dish_category_data = sale.get("DishCategory", {})
-            dish_group_data = sale.get("DishGroup", {})
-            dish_tag_data = sale.get("DishTag", {})
-            dish_tags_data = sale.get("DishTags", {})
-            dish_tax_category_data = sale.get("DishTaxCategory", {})
-            dish_size_data = sale.get("DishSize", {})
-            dish_size_scale_data = dish_size_data.get("Scale", {}) if dish_size_data else {}
+            dish_category_data = sale.get("DishCategory", {}) if isinstance(sale.get("DishCategory"), dict) else {}
+            dish_group_data = sale.get("DishGroup", {}) if isinstance(sale.get("DishGroup"), dict) else {}
+            dish_tag_data = sale.get("DishTag", {}) if isinstance(sale.get("DishTag"), dict) else {}
+            dish_tags_data = sale.get("DishTags", {}) if isinstance(sale.get("DishTags"), dict) else {}
+            dish_tax_category_data = sale.get("DishTaxCategory", {}) if isinstance(sale.get("DishTaxCategory"), dict) else {}
+            dish_size_data = sale.get("DishSize", {}) if isinstance(sale.get("DishSize"), dict) else {}
+            dish_size_scale_data = dish_size_data.get("Scale", {}) if isinstance(dish_size_data.get("Scale"), dict) else {}
             
             # Извлекаем данные о доставке
-            delivery_data = sale.get("Delivery", {})
+            delivery_data = sale.get("Delivery", {}) if isinstance(sale.get("Delivery"), dict) else {}
             
             # Извлекаем данные о скидках заказа
-            order_discount_data = sale.get("OrderDiscount", {})
+            order_discount_data = sale.get("OrderDiscount", {}) if isinstance(sale.get("OrderDiscount"), dict) else {}
             
             # Извлекаем данные о наценках заказа
-            order_increase_data = sale.get("OrderIncrease", {})
+            order_increase_data = sale.get("OrderIncrease", {}) if isinstance(sale.get("OrderIncrease"), dict) else {}
             
             # Извлекаем данные о событии продажи товара
-            item_sale_event_discount_type_data = sale.get("ItemSaleEventDiscountType", {})
+            item_sale_event_discount_type_data = sale.get("ItemSaleEventDiscountType", {}) if isinstance(sale.get("ItemSaleEventDiscountType"), dict) else {}
             
             # Извлекаем данные о платежной транзакции
-            payment_transaction_data = sale.get("PaymentTransaction", {})
+            payment_transaction_data = sale.get("PaymentTransaction", {}) if isinstance(sale.get("PaymentTransaction"), dict) else {}
             
             # Извлекаем данные о кредитном пользователе
-            credit_user_data = sale.get("CreditUser", {})
+            credit_user_data = sale.get("CreditUser", {}) if isinstance(sale.get("CreditUser"), dict) else {}
             
             # Извлекаем данные о ценовой категории
-            price_category_data = sale.get("PriceCategory", {})
+            price_category_data = sale.get("PriceCategory", {}) if isinstance(sale.get("PriceCategory"), dict) else {}
             
             # Извлекаем данные о стоимости продукта
-            product_cost_base_data = sale.get("ProductCostBase", {})
+            product_cost_base_data = sale.get("ProductCostBase", {}) if isinstance(sale.get("ProductCostBase"), dict) else {}
             
             # Извлекаем данные о стимулирующей сумме
-            incentive_sum_base_data = sale.get("IncentiveSumBase", {})
+            incentive_sum_base_data = sale.get("IncentiveSumBase", {}) if isinstance(sale.get("IncentiveSumBase"), dict) else {}
             
             # Извлекаем данные о проценте от итога
-            percent_of_summary_data = sale.get("PercentOfSummary", {})
+            percent_of_summary_data = sale.get("PercentOfSummary", {}) if isinstance(sale.get("PercentOfSummary"), dict) else {}
             
             # Извлекаем данные о продано с блюдом
-            sold_with_dish_data = sale.get("SoldWithDish", {})
+            sold_with_dish_data = sale.get("SoldWithDish", {}) if isinstance(sale.get("SoldWithDish"), dict) else {}
             
             # Извлекаем данные о складе
-            store_data = sale.get("Store", {})
+            store_data = sale.get("Store", {}) if isinstance(sale.get("Store"), dict) else {}
             
             # Извлекаем данные о ресторанной группе
-            restoraunt_group_data = sale.get("RestorauntGroup", {})
+            restoraunt_group_data = sale.get("RestorauntGroup", {}) if isinstance(sale.get("RestorauntGroup"), dict) else {}
             
             # Извлекаем данные о ресторанной секции
-            restaurant_section_data = sale.get("RestaurantSection", {})
+            restaurant_section_data = sale.get("RestaurantSection", {}) if isinstance(sale.get("RestaurantSection"), dict) else {}
             
             # Извлекаем данные о кассе
-            cash_register_name_data = sale.get("CashRegisterName", {})
+            cash_register_name_data = sale.get("CashRegisterName", {}) if isinstance(sale.get("CashRegisterName"), dict) else {}
             
             # Извлекаем данные о платежах
-            pay_types_data = sale.get("PayTypes", {})
+            pay_types_data = sale.get("PayTypes", {}) if isinstance(sale.get("PayTypes"), dict) else {}
             
             # Извлекаем данные о бонусах
-            bonus_data = sale.get("Bonus", {})
+            bonus_data = sale.get("Bonus", {}) if isinstance(sale.get("Bonus"), dict) else {}
             
             # Извлекаем данные о валютах
-            currencies_data = sale.get("Currencies", {})
+            currencies_data = sale.get("Currencies", {}) if isinstance(sale.get("Currencies"), dict) else {}
             
             # Извлекаем данные о готовке
-            cooking_data = sale.get("Cooking", {})
+            cooking_data = sale.get("Cooking", {}) if isinstance(sale.get("Cooking"), dict) else {}
             
             # Извлекаем данные о времени заказа
-            order_time_data = sale.get("OrderTime", {})
+            order_time_data = sale.get("OrderTime", {}) if isinstance(sale.get("OrderTime"), dict) else {}
             
             # Извлекаем данные о времени печати блюда
-            dish_service_print_time_data = sale.get("DishServicePrintTime", {})
+            dish_service_print_time_data = sale.get("DishServicePrintTime", {}) if isinstance(sale.get("DishServicePrintTime"), dict) else {}
             
             # Извлекаем данные о времени открытия
-            open_time_data = sale.get("OpenTime", {})
+            open_time_data = sale.get("OpenTime", {}) if isinstance(sale.get("OpenTime"), dict) else {}
             
             # Извлекаем данные о времени закрытия
-            close_time_data = sale.get("CloseTime", {})
+            close_time_data = sale.get("CloseTime", {}) if isinstance(sale.get("CloseTime"), dict) else {}
             
             # Извлекаем данные о времени предчека
-            precheque_time_data = sale.get("PrechequeTime", {})
+            precheque_time_data = sale.get("PrechequeTime", {}) if isinstance(sale.get("PrechequeTime"), dict) else {}
             
             # Извлекаем данные о времени открытия даты
-            open_date_typed_data = sale.get("OpenDate", {})
+            open_date_typed_data = sale.get("OpenDate", {}) if isinstance(sale.get("OpenDate"), dict) else {}
             
             # Извлекаем данные о НДС
-            vat_data = sale.get("VAT", {})
+            vat_data = sale.get("VAT", {}) if isinstance(sale.get("VAT"), dict) else {}
             
             # Извлекаем данные о внешних данных
-            public_external_data_data = sale.get("PublicExternalData", {})
+            public_external_data_data = sale.get("PublicExternalData", {}) if isinstance(sale.get("PublicExternalData"), dict) else {}
             
             parsed_sale = {
                 # Основные поля
