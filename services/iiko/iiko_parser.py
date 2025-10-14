@@ -24,7 +24,7 @@ class IikoParser:
             parsed_org = {
                 "iiko_id": org.get("id"),
                 "name": org.get("name"),
-                "description": org.get("description", ""),
+                "code": org.get("code", ""),
                 "is_active": org.get("isActive", True),
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
