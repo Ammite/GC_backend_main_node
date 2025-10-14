@@ -156,40 +156,32 @@ class IikoParser:
 
     @staticmethod
     def parse_employees(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
-        """Парсинг сотрудников (Cloud и Server API)"""
+        """Парсинг сотрудников (Server API XML)"""
         if not data:
             return []
         
         parsed_employees = []
         for employee in data:
-            # Проверяем, откуда данные (Cloud API или Server API)
-            if "surname" in employee:  # Cloud API
-                parsed_employee = {
-                    "iiko_id": employee.get("id"),
-                    "code": employee.get("code", ""),
-                    "first_name": employee.get("name", ""),
-                    "middle_name": employee.get("middleName", ""),
-                    "last_name": employee.get("surname", ""),
-                    "phone": employee.get("phone", ""),
-                    "cell_phone": employee.get("cellPhone", ""),
-                    "birthday": employee.get("birthday", ""),
-                    "hire_date": employee.get("hireDate", ""),
-                    "deleted": employee.get("isDeleted", False)
-                }
-            else:  # Server API
-                parsed_employee = {
-                    "iiko_id": employee.get("id"),
-                    "code": employee.get("code", ""),
-                    "first_name": employee.get("name", ""),
-                    "middle_name": "",  # Server API не предоставляет отчество отдельно
-                    "last_name": "",  # Server API не предоставляет фамилию отдельно
-                    "phone": "",  # Server API не предоставляет телефон
-                    "cell_phone": "",  # Server API не предоставляет мобильный телефон
-                    "birthday": "",  # Server API не предоставляет дату рождения
-                    "hire_date": "",  # Server API не предоставляет дату найма
-                    "deleted": employee.get("deleted", False)
-                }
-            
+            # Server API предоставляет данные в XML формате
+            parsed_employee = {
+                "iiko_id": employee.get("id"),
+                "code": employee.get("code", ""),
+                "first_name": employee.get("name", ""),  # В Server API name содержит полное имя
+                "middle_name": "",  # Server API не предоставляет отчество отдельно
+                "last_name": "",  # Server API не предоставляет фамилию отдельно
+                "login": employee.get("login", ""),
+                "phone": "",  # Server API не предоставляет телефон
+                "cell_phone": "",  # Server API не предоставляет мобильный телефон
+                "birthday": "",  # Server API не предоставляет дату рождения
+                "hire_date": "",  # Server API не предоставляет дату найма
+                "deleted": employee.get("deleted", False),
+                "main_role_iiko_id": employee.get("mainRoleId"),  # Сохраняем iiko_id главной роли
+                "roles_iiko_ids": employee.get("rolesIds", []),  # Сохраняем iiko_id всех ролей
+                "client": employee.get("client", False),
+                "supplier": employee.get("supplier", False),
+                "employee": employee.get("employee", False),
+                "represents_store": employee.get("representsStore", False)
+            }
             parsed_employees.append(parsed_employee)
         
         logger.info(f"Парсинг сотрудников: {len(parsed_employees)} записей")

@@ -226,11 +226,31 @@ class IikoSync:
                         Employees.iiko_id == emp_data["iiko_id"]
                     ).first()
                     
+                    # Обрабатываем связи с ролями
+                    main_role_iiko_id = emp_data.pop("main_role_iiko_id", None)
+                    roles_iiko_ids = emp_data.pop("roles_iiko_ids", [])
+                    
+                    # Находим главную роль по iiko_id
+                    main_role_id = None
+                    if main_role_iiko_id:
+                        main_role = db.query(Roles).filter(Roles.iiko_id == main_role_iiko_id).first()
+                        if main_role:
+                            main_role_id = main_role.id
+                    
+                    # Находим все роли по iiko_id
+                    roles_ids = []
+                    for role_iiko_id in roles_iiko_ids:
+                        role = db.query(Roles).filter(Roles.iiko_id == role_iiko_id).first()
+                        if role:
+                            roles_ids.append(role.id)
+                    
+                    # Добавляем найденные ID ролей в данные
+                    emp_data["main_role_id"] = main_role_id
+                    emp_data["roles_id"] = roles_ids
+                    
                     if existing_emp:
                         for key, value in emp_data.items():
-                            if key not in ["created_at"]:
-                                setattr(existing_emp, key, value)
-                        existing_emp.updated_at = datetime.now()
+                            setattr(existing_emp, key, value)
                         updated += 1
                     else:
                         new_emp = Employees(**emp_data)
@@ -238,7 +258,7 @@ class IikoSync:
                         created += 1
                         
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации сотрудника {emp_data.get('name')}: {e}")
+                    logger.error(f"Ошибка синхронизации сотрудника {emp_data.get('first_name')}: {e}")
                     errors += 1
             
             db.commit()
