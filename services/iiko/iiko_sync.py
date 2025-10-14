@@ -248,17 +248,24 @@ class IikoSync:
                     emp_data["main_role_id"] = main_role_id
                     emp_data["roles_id"] = roles_ids
                     
+                    # Убираем поля, которые не должны обновляться
+                    emp_data.pop("created_at", None)
+                    
                     if existing_emp:
                         for key, value in emp_data.items():
                             setattr(existing_emp, key, value)
+                        existing_emp.updated_at = datetime.now()
                         updated += 1
                     else:
+                        emp_data["created_at"] = datetime.now()
+                        emp_data["updated_at"] = datetime.now()
                         new_emp = Employees(**emp_data)
                         db.add(new_emp)
                         created += 1
                         
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации сотрудника {emp_data.get('first_name')}: {e}")
+                    logger.error(f"Ошибка синхронизации сотрудника {emp_data.get('name', 'Unknown')}: {e}")
+                    db.rollback()  # Откатываем транзакцию при ошибке
                     errors += 1
             
             db.commit()
@@ -450,6 +457,56 @@ class IikoSync:
         except Exception as e:
             logger.error(f"Ошибка полной синхронизации: {e}")
             return {"error": str(e)}
+    
+    async def sync_transactions(self, db: Session, organization_id: Optional[str] = None, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, int]:
+        """Синхронизация транзакций"""
+        try:
+            if from_date is None:
+                from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            if to_date is None:
+                to_date = datetime.now().strftime("%Y-%m-%d")
+            transactions_data = await self.service.get_transactions(organization_id, from_date, to_date)
+            
+            if not transactions_data:
+                logger.warning("Не удалось получить данные транзакций")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_transactions(transactions_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for transaction_data in parsed_data:
+                try:
+                    existing_transaction = db.query(Transaction).filter(
+                        Transaction.iiko_id == transaction_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_transaction:
+                        for key, value in transaction_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_transaction, key, value)
+                        existing_transaction.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        new_transaction = Transaction(**transaction_data)
+                        db.add(new_transaction)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации транзакции {transaction_data.get('order_num')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация транзакций завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации транзакций: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+        
 
 
 # Глобальный экземпляр синхронизатора

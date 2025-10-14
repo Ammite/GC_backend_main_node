@@ -586,6 +586,18 @@ class IikoService:
             data=report_data
         )
 
+    async def get_transactions(self, organization_id: Optional[str] = None, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение транзакций (Server API)"""
+        params = {
+            "organizationId": organization_id,
+            "fromDate": from_date,
+            "toDate": to_date
+        }
+        result = await self.get_server_transactions_report(params)
+        if result and "data" in result:
+            return result["data"]
+        return None
+
     async def get_server_transactions_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
         """Получение отчета по транзакциям (Server API)"""
         return await self._make_request(

@@ -9,6 +9,14 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+def _parse_boolean(value):
+    """Парсинг boolean значений из различных форматов"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return False
+
 
 class IikoParser:
     """Класс для парсинга данных из iiko API"""
@@ -166,21 +174,54 @@ class IikoParser:
             parsed_employee = {
                 "iiko_id": employee.get("id"),
                 "code": employee.get("code", ""),
-                "first_name": employee.get("name", ""),  # В Server API name содержит полное имя
-                "middle_name": "",  # Server API не предоставляет отчество отдельно
-                "last_name": "",  # Server API не предоставляет фамилию отдельно
+                "name": employee.get("name", ""),
                 "login": employee.get("login", ""),
-                "phone": "",  # Server API не предоставляет телефон
-                "cell_phone": "",  # Server API не предоставляет мобильный телефон
-                "birthday": "",  # Server API не предоставляет дату рождения
-                "hire_date": "",  # Server API не предоставляет дату найма
-                "deleted": employee.get("deleted", False),
-                "main_role_iiko_id": employee.get("mainRoleId"),  # Сохраняем iiko_id главной роли
-                "roles_iiko_ids": employee.get("rolesIds", []),  # Сохраняем iiko_id всех ролей
-                "client": employee.get("client", False),
-                "supplier": employee.get("supplier", False),
-                "employee": employee.get("employee", False),
-                "represents_store": employee.get("representsStore", False)
+                "password": employee.get("password", ""),
+                
+                # Имена
+                "first_name": employee.get("firstName", ""),
+                "middle_name": employee.get("middleName", ""),
+                "last_name": employee.get("lastName", ""),
+                
+                # Контакты
+                "phone": employee.get("phone", ""),
+                "cell_phone": employee.get("cellPhone", ""),
+                "email": employee.get("email", ""),
+                "address": employee.get("address", ""),
+                
+                # Даты
+                "birthday": employee.get("birthday") if employee.get("birthday") else None,
+                "hire_date": employee.get("hireDate", ""),
+                "hire_document_number": employee.get("hireDocumentNumber", ""),
+                "fire_date": employee.get("fireDate") if employee.get("fireDate") else None,
+                "activation_date": employee.get("activationDate") if employee.get("activationDate") else None,
+                "deactivation_date": employee.get("deactivationDate") if employee.get("deactivationDate") else None,
+                
+                # Дополнительная информация
+                "note": employee.get("note", ""),
+                "card_number": employee.get("cardNumber", ""),
+                "pin_code": employee.get("pinCode", ""),
+                "taxpayer_id_number": employee.get("taxpayerIdNumber", ""),
+                "snils": employee.get("snils", ""),
+                "gln": employee.get("gln", ""),
+                
+                # Роли и должности
+                "main_role_iiko_id": employee.get("mainRoleId"),
+                "roles_iiko_ids": employee.get("rolesIds", []),
+                "main_role_code": employee.get("mainRoleCode", ""),
+                "role_codes": employee.get("roleCodes", []),
+                
+                # Подразделения
+                "preferred_department_code": employee.get("preferredDepartmentCode", ""),
+                "department_codes": employee.get("departmentCodes", []),
+                "responsibility_department_codes": employee.get("responsibilityDepartmentCodes", []),
+                
+                # Статусы
+                "deleted": _parse_boolean(employee.get("deleted", "false")),
+                "client": _parse_boolean(employee.get("client", "false")),
+                "supplier": _parse_boolean(employee.get("supplier", "false")),
+                "employee": _parse_boolean(employee.get("employee", "false")),
+                "represents_store": _parse_boolean(employee.get("representsStore", "false"))
             }
             parsed_employees.append(parsed_employee)
         
