@@ -292,7 +292,7 @@ class IikoService:
                 IikoApiType.CLOUD,
                 "/api/1/terminal_groups",
                 method="POST",
-                data={"organizationId": organization_id}
+                data={"organizationIds": [organization_id]}
             )
         else:
             # Если organization_id не указан, получаем терминалы из всех организаций
@@ -308,7 +308,7 @@ class IikoService:
                         IikoApiType.CLOUD,
                         "/api/1/terminal_groups",
                         method="POST",
-                        data={"organizationId": org_id}
+                        data={"organizationIds": [org_id]}
                     )
                     if terminals:
                         all_terminals.extend(terminals)
@@ -328,16 +328,9 @@ class IikoService:
 
     # Server API методы
     async def get_server_organizations(self) -> Optional[List[Dict[Any, Any]]]:
-        """Получение списка организаций (Server API)"""
-        result = await self._make_request(
-            IikoApiType.SERVER,
-            "/resto/api/organizations"
-        )
-        # Server API возвращает список организаций напрямую
-        if isinstance(result, list):
-            return result
-        elif isinstance(result, dict) and "organizations" in result:
-            return result["organizations"]
+        """Получение списка организаций (Server API) - НЕ ПОДДЕРЖИВАЕТСЯ"""
+        # Server API не имеет эндпоинта для получения организаций
+        logger.warning("Server API не поддерживает получение организаций")
         return None
 
     async def get_server_products(self) -> Optional[List[Dict[Any, Any]]]:

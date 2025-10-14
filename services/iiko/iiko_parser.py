@@ -25,7 +25,7 @@ class IikoParser:
                 "iiko_id": org.get("id"),
                 "name": org.get("name"),
                 "code": org.get("code", ""),
-                "is_active": org.get("isActive", True),
+                "is_active": True,  # По умолчанию активна
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
             }
@@ -44,8 +44,8 @@ class IikoParser:
         items = []
         modifiers = []
         
-        # Парсинг групп (категорий)
-        groups = data.get("groups", [])
+        # Парсинг групп (категорий) - используем productCategories
+        groups = data.get("productCategories", [])
         for group in groups:
             category = {
                 "iiko_id": group.get("id"),
