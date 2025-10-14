@@ -224,9 +224,16 @@ class IikoParser:
         
         parsed_roles = []
         for role in data:
+            # Если код отсутствует, генерируем его на основе имени
+            code = role.get("code")
+            if not code:
+                name = role.get("name", "")
+                # Берем первые 3-5 символов имени и делаем их заглавными
+                code = name[:5].upper().replace(" ", "") if name else "ROLE"
+            
             parsed_role = {
                 "iiko_id": role.get("id"),
-                "code": role.get("code", ""),
+                "code": code,
                 "name": role.get("name"),
                 "payment_per_hour": role.get("paymentPerHour", 0.0),
                 "steady_salary": role.get("steadySalary", 0.0),
