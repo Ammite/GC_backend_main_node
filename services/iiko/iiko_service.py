@@ -33,7 +33,7 @@ class IikoService:
         
         # Общие настройки
         self.timeout = 60  # Увеличиваем общий timeout до 60 секунд
-        self.cloud_request_delay = 1.5  # Задержка между Cloud API запросами (секунды)
+        self.cloud_request_delay = 60  # Задержка между Cloud API запросами (секунды)
         self.server_request_delay = 0.5  # Задержка между Server API запросами (секунды)
 
     async def _add_request_delay(self, api_type: IikoApiType):

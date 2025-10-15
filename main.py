@@ -7,6 +7,7 @@ import importlib
 import pkgutil
 from contextlib import asynccontextmanager
 import config
+from utils.security import decode_access_token
 from database.database import init_db
 import secrets
 
@@ -133,13 +134,22 @@ async def check_token(request: Request, call_next):
         response = await call_next(request)
         return response
     
-    token = request.headers.get("Authorization")
-    if token and token.startswith("Bearer "):
-        token = token.split(" ")[1]
-    else:
-        token = request.query_params.get("token")
+    auth_header = request.headers.get("Authorization")
+    bearer_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        bearer_token = auth_header.split(" ")[1]
 
-    if token != config.API_VALID_TOKEN:
+    query_token = request.query_params.get("token")
+
+    # Разрешаем либо валидный JWT, либо валидный API токен из конфига
+    jwt_ok = False
+    if bearer_token:
+        payload = decode_access_token(bearer_token)
+        jwt_ok = payload is not None
+
+    api_token_ok = query_token == config.API_VALID_TOKEN or (auth_header == config.API_VALID_TOKEN)
+
+    if not (jwt_ok or api_token_ok):
         raise HTTPException(status_code=401, detail="Invalid or missing token")
 
     response = await call_next(request)

@@ -15,7 +15,7 @@ router = APIRouter()
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.login == request.login).first()
-    if not user or not verify_password(request.password, user.password_hash):
+    if not user or not verify_password(request.password, user.password):
         return {"success": False, "message": "Invalid credentials"}
 
     access_token = create_access_token(
@@ -24,14 +24,13 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     )
 
     # Берём первую роль пользователя (если их несколько) для ответа
-    first_role = user.roles[0].name if user.roles else None
     return {
         "success": True,
         "message": "Login successful",
         "user_id": user.id,
         "access_token": access_token,
         "token_type": "bearer",
-        "role": first_role,
+        "role": None,
     }
 
 @router.post("/register", response_model=LoginResponse)
@@ -41,11 +40,8 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
         return {"success": False, "message": "User already exists"}
 
     hashed_password = hash_password(request.password)
-    new_user = User(login=request.login, password_hash=hashed_password)
-    # Назначаем роль "Официант"
-    waiter_role = db.query(Roles).filter(Roles.code == "waiter").first()
-    if waiter_role:
-        new_user.roles.append(waiter_role)
+    new_user = User(login=request.login, password=hashed_password)
+    
 
     db.add(new_user)
     db.commit()
@@ -56,12 +52,12 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
         expires_delta=timedelta(minutes=30),
     )
 
-    first_role = new_user.roles[0].name if new_user.roles else None
+    
     return {
         "success": True,
         "message": "User registered successfully",
         "user_id": new_user.id,
         "access_token": access_token,
         "token_type": "bearer",
-        "role": first_role,
+        "role": None,
     }
