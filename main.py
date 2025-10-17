@@ -17,8 +17,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Настройки для базовой авторизации документации
-DOCS_USERNAME = "admin"
-DOCS_PASSWORD = "docs123"
+DOCS_USERNAME = config.DOCS_USERNAME
+DOCS_PASSWORD = config.DOCS_PASSWORD
 security = HTTPBasic()
 
 def verify_docs_credentials(credentials: HTTPBasicCredentials = Depends(security)):

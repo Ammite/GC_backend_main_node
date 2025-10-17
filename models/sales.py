@@ -380,6 +380,9 @@ class Sales(Base):
     public_external_data = Column(Text, nullable=True)  # PublicExternalData
     public_external_data_xml = Column(Text, nullable=True)  # PublicExternalData.Xml
     
+    # Комиссия
+    commission = Column(Numeric(5, 2), nullable=True)  # Комиссия в процентах
+    
     # Системные поля
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
