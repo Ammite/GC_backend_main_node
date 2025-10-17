@@ -25,3 +25,5 @@ class Modifier(Base):
 
     parent_id = Column(Integer, ForeignKey("modifiers.id"), nullable=True)
     children = relationship("Modifier", backref="parent", remote_side=[id])
+
+

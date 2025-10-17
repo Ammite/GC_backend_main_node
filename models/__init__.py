@@ -1,5 +1,5 @@
 from .d_order import DOrder
-from .items import Item
+from .item import Item
 from .penalty import Penalty
 from .rewards import Reward
 from .roles import Roles
@@ -9,19 +9,20 @@ from .user import User
 from .user_reward import UserReward
 from .user_salary import UserSalary
 from .attendance_types import AttendanceType
-from .categories import Category
+from .category import Category
 from .employees import Employees
-from .menu_categories import MenuCategory
-from .modifiers import Modifier
+from .menu_category import MenuCategory
+from .modifier import Modifier
 from .order_types import OrderType
-from .orders import Order
-from .organizations import Organization
-from .products_groups import ProductGroup
+from .organization import Organization
+from .product_group import ProductGroup
 from .restaurant_sections import RestaurantSection
 from .schedule_types import ScheduleType
 from .tables import Table
 from .terminal_groups import TerminalGroup
 from .terminals import Terminal
+from .transaction import Transaction
+from .sales import Sales
 
 __all__ = [
     "DOrder",
@@ -40,7 +41,6 @@ __all__ = [
     "MenuCategory",
     "Modifier",
     "OrderType",
-    "Order",
     "Organization",
     "ProductGroup",
     "RestaurantSection",
@@ -48,6 +48,8 @@ __all__ = [
     "Table",
     "TerminalGroup",
     "Terminal",
+    "Transaction",
+    "Sales",
 ]
 
 

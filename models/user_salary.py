@@ -7,5 +7,5 @@ class UserSalary(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(String(50), unique=True, nullable=True)
-    user_id = Column(Integer, ForeignKey("roles.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
     salary = Column(Numeric(10, 2), nullable=False)
