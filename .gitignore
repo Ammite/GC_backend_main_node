@@ -25,3 +25,5 @@ __pycache__
 ## Temporary files
 temp_files
 temp_files/*
+reports/*
+logs/*

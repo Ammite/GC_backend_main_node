@@ -186,7 +186,7 @@ class Sales(Base):
     
     # Валюты
     currencies_currency = Column(String(50), nullable=True)  # Currencies.Currency
-    currencies_currency_rate = Column(Numeric(10, 4), nullable=True)  # Currencies.CurrencyRate
+    currencies_currency_rate = Column(Numeric(20, 4), nullable=True)  # Currencies.CurrencyRate (увеличено с 10 до 20)
     currencies_sum_in_currency = Column(Numeric(15, 2), nullable=True)  # Currencies.SumInCurrency
     
     # Готовка
@@ -310,10 +310,10 @@ class Sales(Base):
     price_category_user_card_owner = Column(String(255), nullable=True)  # PriceCategoryUserCardOwner
     
     # Стоимость продукта
-    product_cost_base_mark_up = Column(Numeric(10, 4), nullable=True)  # ProductCostBase.MarkUp
+    product_cost_base_mark_up = Column(Numeric(20, 4), nullable=True)  # ProductCostBase.MarkUp (увеличено с 10 до 20)
     product_cost_base_one_item = Column(Numeric(15, 2), nullable=True)  # ProductCostBase.OneItem
-    product_cost_base_percent = Column(Numeric(10, 4), nullable=True)  # ProductCostBase.Percent
-    product_cost_base_percent_without_vat = Column(Numeric(10, 4), nullable=True)  # ProductCostBase.PercentWithoutVAT
+    product_cost_base_percent = Column(Numeric(20, 4), nullable=True)  # ProductCostBase.Percent (увеличено с 10 до 20)
+    product_cost_base_percent_without_vat = Column(Numeric(20, 4), nullable=True)  # ProductCostBase.PercentWithoutVAT (увеличено с 10 до 20)
     product_cost_base_product_cost = Column(Numeric(15, 2), nullable=True)  # ProductCostBase.ProductCost
     product_cost_base_profit = Column(Numeric(15, 2), nullable=True)  # ProductCostBase.Profit
     
@@ -321,8 +321,8 @@ class Sales(Base):
     incentive_sum_base_sum = Column(Numeric(15, 2), nullable=True)  # IncentiveSumBase.Sum
     
     # Процент от итога
-    percent_of_summary_by_col = Column(Numeric(10, 4), nullable=True)  # PercentOfSummary.ByCol
-    percent_of_summary_by_row = Column(Numeric(10, 4), nullable=True)  # PercentOfSummary.ByRow
+    percent_of_summary_by_col = Column(Numeric(20, 4), nullable=True)  # PercentOfSummary.ByCol (увеличено с 10 до 20)
+    percent_of_summary_by_row = Column(Numeric(20, 4), nullable=True)  # PercentOfSummary.ByRow (увеличено с 10 до 20)
     
     # Продано с блюдом
     sold_with_dish = Column(String(255), nullable=True)  # SoldWithDish
