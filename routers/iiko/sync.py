@@ -282,6 +282,7 @@ async def sync_sales(
 ) -> Dict[str, Any]:
     """
     Синхронизация продаж с iiko API
+    2025-09-30T00:00:00.000
     """
     try:
         logger.info(f"Запуск синхронизации продаж")

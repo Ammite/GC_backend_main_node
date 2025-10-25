@@ -603,28 +603,110 @@ class IikoService:
         )
 
     async def get_transactions(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение транзакций (Server API)"""
-        params = data_frames.iiko_transactions_data_frame
-        if from_date:
-            params["filters"]["DateTime.Typed"]["from"] = from_date
-        if to_date:
-            params["filters"]["DateTime.Typed"]["to"] = to_date
-        result = await self.get_server_transactions_report(params)
-        if result and "data" in result:
-            return result["data"]
-        return None
+        """Получение транзакций (Server API) с разбивкой по дням для больших диапазонов"""
+        if not from_date or not to_date:
+            # Если даты не указаны, делаем обычный запрос
+            params = data_frames.iiko_transactions_data_frame
+            if from_date:
+                params["filters"]["DateTime.Typed"]["from"] = from_date
+            if to_date:
+                params["filters"]["DateTime.Typed"]["to"] = to_date
+            result = await self.get_server_transactions_report(params)
+            if result and "data" in result:
+                return result["data"]
+            return None
+        
+        # Парсим даты
+        try:
+            start_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+            end_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        except Exception as e:
+            logger.error(f"Ошибка парсинга дат: {e}")
+            return None
+        
+        # Разбиваем на дни и собираем данные
+        all_transactions = []
+        current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        while current_date < end_date:
+            next_date = current_date + timedelta(days=1)
+            
+            # Убеждаемся, что не выходим за пределы end_date
+            if next_date > end_date:
+                next_date = end_date
+            
+            # Формируем параметры для запроса за один день
+            day_from = current_date.isoformat()
+            day_to = next_date.isoformat()
+            
+            logger.info(f"Запрос транзакций с {day_from} по {day_to}")
+            
+            params = data_frames.iiko_transactions_data_frame.copy()
+            params["filters"]["DateTime.Typed"]["from"] = day_from
+            params["filters"]["DateTime.Typed"]["to"] = day_to
+            
+            result = await self.get_server_transactions_report(params)
+            if result and "data" in result:
+                all_transactions.extend(result["data"])
+                logger.info(f"Получено транзакций за день: {len(result['data'])}")
+            
+            current_date = next_date
+        
+        logger.info(f"Всего получено транзакций: {len(all_transactions)}")
+        return all_transactions if all_transactions else None
 
     async def get_sales(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение продаж (Server API)"""
-        params = data_frames.iiko_sales_data_frame
-        if from_date:
-            params["filters"]["OpenDate.Typed"]["from"] = from_date
-        if to_date:
-            params["filters"]["OpenDate.Typed"]["to"] = to_date
-        result = await self.get_server_sales_report(params)
-        if result and "data" in result:
-            return result["data"]
-        return None
+        """Получение продаж (Server API) с разбивкой по дням для больших диапазонов"""
+        if not from_date or not to_date:
+            # Если даты не указаны, делаем обычный запрос
+            params = data_frames.iiko_sales_data_frame
+            if from_date:
+                params["filters"]["OpenDate.Typed"]["from"] = from_date
+            if to_date:
+                params["filters"]["OpenDate.Typed"]["to"] = to_date
+            result = await self.get_server_sales_report(params)
+            if result and "data" in result:
+                return result["data"]
+            return None
+        
+        # Парсим даты
+        try:
+            start_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+            end_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        except Exception as e:
+            logger.error(f"Ошибка парсинга дат: {e}")
+            return None
+        
+        # Разбиваем на дни и собираем данные
+        all_sales = []
+        current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        while current_date < end_date:
+            next_date = current_date + timedelta(days=1)
+            
+            # Убеждаемся, что не выходим за пределы end_date
+            if next_date > end_date:
+                next_date = end_date
+            
+            # Формируем параметры для запроса за один день
+            day_from = current_date.isoformat()
+            day_to = next_date.isoformat()
+            
+            logger.info(f"Запрос продаж с {day_from} по {day_to}")
+            
+            params = data_frames.iiko_sales_data_frame.copy()
+            params["filters"]["OpenDate.Typed"]["from"] = day_from
+            params["filters"]["OpenDate.Typed"]["to"] = day_to
+            
+            result = await self.get_server_sales_report(params)
+            if result and "data" in result:
+                all_sales.extend(result["data"])
+                logger.info(f"Получено продаж за день: {len(result['data'])}")
+            
+            current_date = next_date
+        
+        logger.info(f"Всего получено продаж: {len(all_sales)}")
+        return all_sales if all_sales else None
 
     async def get_server_transactions_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
         """Получение отчета по транзакциям (Server API)"""
