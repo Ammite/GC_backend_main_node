@@ -420,13 +420,10 @@ def sync_all_commissions_with_orders():
         }
         
         # Обрабатываем каждую комиссию
-        limit = len(all_commissions)
-        counter = 1
         for commission in all_commissions:
             commission_amount = float(commission.bank_commission or 0)
             stats["total_commission_amount"] += commission_amount
 
-            # print(f"[INFO] {counter}/{limit}")
             # print(f"[INFO] Processing commission {commission.id} with amount {commission_amount}")
             result = sync_commission_with_order(commission.id, session)
             
@@ -476,7 +473,6 @@ def sync_all_commissions_with_orders():
                     "time_transaction": commission.time_transaction.isoformat() if commission.time_transaction else None,
                     "error": result["error"]
                 })
-            counter += 1
         
         # Добавляем статистику по трекеру
         final_tracker_stats = get_transaction_tracker_stats()
