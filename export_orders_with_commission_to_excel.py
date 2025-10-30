@@ -17,6 +17,7 @@ import pandas as pd
 import config
 from models.d_order import DOrder
 from models.sales import Sales
+from models.organization import Organization
 
 # Подключение к БД
 DATABASE_URL = config.DATABASE_URL
@@ -208,8 +209,168 @@ def export_orders_with_commission_to_excel(start_date='2025-10-13 00:00:00', end
         print(f"✓ Данные успешно экспортированы в файл: {full_output_path}")
         print()
         
+        # Создаем дополнительную таблицу с комиссиями
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        create_commission_table(start_date, end_date, timestamp)
+        
     except Exception as e:
         print(f"Ошибка при экспорте данных: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        db.close()
+
+def create_commission_table(start_date, end_date, timestamp):
+    """
+    Создает дополнительную таблицу с данными по комиссиям
+    """
+    db = SessionLocal()
+    
+    try:
+        print("=" * 80)
+        print("СОЗДАНИЕ ТАБЛИЦЫ КОМИССИЙ")
+        print("=" * 80)
+        print()
+        
+        print("Выполняем запрос к базе данных для таблицы комиссий...")
+        
+        # Выполняем запрос для таблицы комиссий
+        query = db.query(
+            DOrder.iiko_id.label('iiko_id'),
+            DOrder.time_order.label('time_order'),
+            DOrder.discount.label('price'),
+            DOrder.bank_commission.label('bank_commission'),
+            Organization.name.label('organization_name')
+        ).join(
+            Organization,
+            DOrder.organization_id == Organization.id
+        ).filter(
+            and_(
+                DOrder.time_order >= start_date,
+                DOrder.time_order < end_date,
+                DOrder.discount != 0,
+                DOrder.iiko_id.like('COMMISSION_%')
+            )
+        ).order_by(
+            DOrder.iiko_id.asc()
+        )
+        
+        # Получаем результаты
+        results = query.all()
+        
+        print(f"Найдено записей комиссий: {len(results)}")
+        print()
+        
+        if not results:
+            print("⚠ Данные комиссий не найдены для указанных критериев!")
+            return
+        
+        # Преобразуем в DataFrame
+        print("Создаем DataFrame для таблицы комиссий...")
+        data = []
+        for row in results:
+            data.append({
+                'iiko_id': row.iiko_id,
+                'Время заказа': row.time_order,
+                'Цена (скидка)': row.price,
+                'Комиссия банка': row.bank_commission,
+                'Название организации': row.organization_name
+            })
+        
+        df_commission = pd.DataFrame(data)
+        
+        # Форматируем даты
+        if 'Время заказа' in df_commission.columns:
+            df_commission['Время заказа'] = pd.to_datetime(df_commission['Время заказа'])
+        
+        # Генерируем имя файла для таблицы комиссий
+        date_range = f"{start_date.strftime('%Y%m%d')}_{end_date.strftime('%Y%m%d')}"
+        commission_output_file = f"commission_table_{date_range}_{timestamp}.xlsx"
+        
+        # Создаем папку reports если её нет
+        reports_dir = "reports"
+        if not os.path.exists(reports_dir):
+            os.makedirs(reports_dir)
+        
+        # Полный путь к файлу
+        full_commission_path = os.path.join(reports_dir, commission_output_file)
+        
+        # Сохраняем в Excel
+        print(f"Сохраняем таблицу комиссий в файл: {full_commission_path}")
+        
+        # Используем openpyxl для поддержки русского языка
+        with pd.ExcelWriter(full_commission_path, engine='openpyxl') as writer:
+            df_commission.to_excel(writer, sheet_name='Комиссии', index=False)
+            
+            # Получаем workbook и worksheet для форматирования
+            workbook = writer.book
+            worksheet = writer.sheets['Комиссии']
+            
+            # Автоматически настраиваем ширину столбцов
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                
+                for cell in column:
+                    try:
+                        if cell.value:
+                            cell_length = len(str(cell.value))
+                            if cell_length > max_length:
+                                max_length = cell_length
+                    except:
+                        pass
+                
+                adjusted_width = min(max_length + 2, 50)  # Максимум 50 символов
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        print()
+        print("=" * 80)
+        print("СТАТИСТИКА ТАБЛИЦЫ КОМИССИЙ:")
+        print("=" * 80)
+        print(f"Всего записей комиссий экспортировано: {len(df_commission)}")
+        print(f"Период: {start_date.date()} - {end_date.date()}")
+        
+        # Дополнительная статистика по комиссиям
+        if len(df_commission) > 0:
+            print()
+            print("Распределение по организациям:")
+            org_stats = df_commission['Название организации'].value_counts()
+            for org_name, count in org_stats.items():
+                print(f"  - {org_name}: {count}")
+            
+            # Статистика по комиссиям
+            if 'Комиссия банка' in df_commission.columns:
+                total_commission = df_commission['Комиссия банка'].sum()
+                records_with_commission = df_commission['Комиссия банка'].notna().sum()
+                records_without_commission = df_commission['Комиссия банка'].isna().sum()
+                
+                print()
+                print("Статистика по комиссиям:")
+                print(f"  - Записей с комиссией: {records_with_commission}")
+                print(f"  - Записей без комиссии: {records_without_commission}")
+                if total_commission:
+                    print(f"  - Общая сумма комиссий: {total_commission:.2f}")
+            
+            # Статистика по ценам
+            if 'Цена (скидка)' in df_commission.columns:
+                total_price = df_commission['Цена (скидка)'].sum()
+                avg_price = df_commission['Цена (скидка)'].mean()
+                min_price = df_commission['Цена (скидка)'].min()
+                max_price = df_commission['Цена (скидка)'].max()
+                
+                print()
+                print("Статистика по ценам (скидкам):")
+                print(f"  - Общая сумма: {total_price:.2f}")
+                print(f"  - Средняя цена: {avg_price:.2f}")
+                print(f"  - Минимальная цена: {min_price:.2f}")
+                print(f"  - Максимальная цена: {max_price:.2f}")
+        
+        print()
+        print(f"✓ Таблица комиссий успешно экспортирована в файл: {full_commission_path}")
+        print()
+        
+    except Exception as e:
+        print(f"Ошибка при создании таблицы комиссий: {e}")
         import traceback
         traceback.print_exc()
     finally:
