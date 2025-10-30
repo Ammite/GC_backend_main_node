@@ -23,6 +23,7 @@ from .terminal_groups import TerminalGroup
 from .terminals import Terminal
 from .transaction import Transaction
 from .sales import Sales
+from .bank_commission import BankCommission
 
 __all__ = [
     "DOrder",
@@ -50,6 +51,7 @@ __all__ = [
     "Terminal",
     "Transaction",
     "Sales",
+    "BankCommission",
 ]
 
 
