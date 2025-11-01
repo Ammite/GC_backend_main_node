@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, ForeignKey, Integer, Boolean, ARRAY, DateTime, Date, Text
 from sqlalchemy.orm import relationship
 from database.database import Base
+from datetime import datetime
 
 
 class Employees(Base):
@@ -69,5 +70,8 @@ class Employees(Base):
     supplier = Column(Boolean, default=False)
     employee = Column(Boolean, default=False)
     represents_store = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.now())
+    updated_at = Column(DateTime, default=datetime.now())
 
 

@@ -45,7 +45,7 @@ def main():
         """
     )
     
-    group = parser.add_mutually_exclusive_group(required=True)
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument(
         '--all',
         action='store_true',
@@ -70,12 +70,18 @@ def main():
     
     args = parser.parse_args()
     
-    # Валидация аргументов
+    # Валидация аргументов - проверяем, что указан хотя бы один режим
+    has_mode = bool(args.all or args.days or (args.start and args.end))
+    if not has_mode:
+        parser.error("Необходимо указать один из режимов: --all, --days, или --start/--end")
+    
+    # Валидация комбинации start/end
     if args.start and not args.end:
         parser.error("--start требует --end")
     if args.end and not args.start:
         parser.error("--end требует --start")
     
+    # Валидация взаимной исключительности
     if (args.start or args.end) and (args.all or args.days):
         parser.error("--start/--end не могут использоваться с --all или --days")
     
