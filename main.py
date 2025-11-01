@@ -130,7 +130,7 @@ app.add_middleware(
 @app.middleware("http")
 async def check_token(request: Request, call_next):
     # Пропускаем авторизацию для документации и статических файлов
-    if request.url.path in ["/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
+    if request.url.path in ["/login", "/register", "/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
         response = await call_next(request)
         return response
     
