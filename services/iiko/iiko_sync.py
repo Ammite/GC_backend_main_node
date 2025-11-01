@@ -3,6 +3,7 @@
 Содержит функции для синхронизации данных из iiko API с локальной базой данных
 """
 
+import json
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
@@ -586,6 +587,69 @@ class IikoSync:
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
     
+    async def sync_terminal_groups(self, db: Session, organization_id: Optional[str] = None) -> Dict[str, int]:
+        """Синхронизация групп терминалов"""
+        try:
+            terminal_groups_data = await self.service.get_terminal_groups(organization_id)
+            
+            if not terminal_groups_data:
+                logger.warning("Не удалось получить данные групп терминалов")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_terminal_groups(terminal_groups_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for group_data in parsed_data:
+                try:
+                    # Находим организацию по iiko_id
+                    org_iiko_id = group_data.get("organization_id")
+                    organization = None
+                    if org_iiko_id:
+                        organization = db.query(Organization).filter(
+                            Organization.iiko_id == org_iiko_id
+                        ).first()
+                    
+                    # Убираем organization_id из данных, так как это iiko_id
+                    group_data_clean = {k: v for k, v in group_data.items() if k != "organization_id"}
+                    
+                    existing_group = db.query(TerminalGroup).filter(
+                        TerminalGroup.iiko_id == group_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_group:
+                        for key, value in group_data_clean.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_group, key, value)
+                        if organization:
+                            existing_group.organization_id = organization.id
+                        existing_group.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        new_group = TerminalGroup(iiko_id=group_data["iiko_id"], name=group_data["name"])
+                        if organization:
+                            new_group.organization_id = organization.id
+                        db.add(new_group)
+                        created += 1
+                    
+                    # Коммитим каждую запись отдельно
+                    db.commit()
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации группы терминалов {group_data.get('iiko_id')}: {e}")
+                    db.rollback()  # Откатываем транзакцию при ошибке
+                    errors += 1
+            
+            logger.info(f"Синхронизация групп терминалов завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации групп терминалов: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
     async def sync_terminals(self, db: Session, organization_id: Optional[str] = None) -> Dict[str, int]:
         """Синхронизация терминалов"""
         try:

@@ -1,6 +1,7 @@
-from sqlalchemy import Column, String, ForeignKey, Integer, Boolean
+from sqlalchemy import Column, String, ForeignKey, Integer, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Table(Base):
@@ -15,5 +16,8 @@ class Table(Base):
     revision = Column(String(50), nullable=True)
     is_deleted = Column(Boolean, default=False)
     pos_id = Column(String(50), nullable=True)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)
 
     section = relationship("RestaurantSection", back_populates="tables")

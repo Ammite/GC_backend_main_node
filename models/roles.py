@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, Boolean, Numeric, DateTime
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Roles(Base):
@@ -16,3 +17,6 @@ class Roles(Base):
     schedule_type = Column(String(50), nullable=True)
 
     deleted = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

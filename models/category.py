@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Category(Base):
@@ -12,7 +13,9 @@ class Category(Base):
 
     parent_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     parent = relationship("Category", remote_side=[id], backref="children")
-
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)
 
     items = relationship("Item", back_populates="category")
 

@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, ForeignKey, TIMESTAMP, String
+from sqlalchemy import Column, Integer, ForeignKey, TIMESTAMP, String, DateTime
 from sqlalchemy.sql import func
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Shift(Base):
@@ -17,3 +18,6 @@ class Shift(Base):
     attendance_type_id = Column(Integer, ForeignKey("attendance_types.id"))
 
     employee_id = Column(Integer, ForeignKey("employees.id"))
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

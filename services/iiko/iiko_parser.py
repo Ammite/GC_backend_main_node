@@ -540,6 +540,26 @@ class IikoParser:
         return parsed_tables
 
     @staticmethod
+    def parse_terminal_groups(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг групп терминалов"""
+        if not data:
+            return []
+        
+        parsed_groups = []
+        for group in data:
+            parsed_group = {
+                "iiko_id": group.get("id"),
+                "name": group.get("name"),
+                "organization_id": group.get("organizationId"),  # Это iiko_id организации
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
+            }
+            parsed_groups.append(parsed_group)
+        
+        logger.info(f"Парсинг групп терминалов: {len(parsed_groups)} записей")
+        return parsed_groups
+
+    @staticmethod
     def parse_terminals(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
         """Парсинг терминалов"""
         if not data:

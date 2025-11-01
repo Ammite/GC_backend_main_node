@@ -34,7 +34,7 @@ class IikoService:
         
         # Общие настройки
         self.timeout = 60  # Увеличиваем общий timeout до 60 секунд
-        self.cloud_request_delay = 60  # Задержка между Cloud API запросами (секунды)
+        self.cloud_request_delay = 15  # Задержка между Cloud API запросами (секунды)
         self.server_request_delay = 0.5  # Задержка между Server API запросами (секунды)
 
     async def _add_request_delay(self, api_type: IikoApiType):
@@ -436,6 +436,47 @@ class IikoService:
                         all_tables.extend(tables_data)
             
             return all_tables
+
+    async def get_cloud_terminal_groups(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп терминалов (Cloud API)"""
+        if organization_id:
+            result = await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/terminal_groups",
+                method="POST",
+                data={"organizationIds": [organization_id]}
+            )
+            logger.info(f"Группы терминалов: {json.dumps(result, indent=4, ensure_ascii=False)}")
+            # Извлекаем группы терминалов из структуры ответа
+            if result and "terminalGroups" in result:
+                # Возвращаем сами группы с информацией об организации
+                groups = []
+                for group in result["terminalGroups"]:
+                    if "items" in group and group["items"]:
+                        for item in group["items"]:
+                            groups.append({
+                                "id": item.get("id"),
+                                "name": item.get("name"),
+                                "organizationId": organization_id
+                            })
+                return groups
+            return None
+        else:
+            # Если organization_id не указан, получаем группы терминалов из всех организаций
+            organizations = await self.get_organizations()
+            if not organizations:
+                return None
+            
+            all_groups = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    groups = await self.get_cloud_terminal_groups(org_id)
+                    logger.info(f"Группы терминалов: {json.dumps(groups, indent=4, ensure_ascii=False)}")
+                    if groups:
+                        all_groups.extend(groups)
+            
+            return all_groups
 
     async def get_cloud_terminals(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение терминалов (Cloud API)"""
@@ -862,6 +903,20 @@ class IikoService:
             return None
         else:
             result = await self.get_cloud_tables(organization_id)
+            if result:
+                return result
+            return None
+
+    async def get_terminal_groups(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп терминалов (пробует Cloud, затем Server)"""
+        if prefer_cloud:
+            result = await self.get_cloud_terminal_groups(organization_id)
+            if result:
+                return result
+            # Server API не имеет прямого аналога для групп терминалов
+            return None
+        else:
+            result = await self.get_cloud_terminal_groups(organization_id)
             if result:
                 return result
             return None

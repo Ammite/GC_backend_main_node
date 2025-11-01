@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from database.database import Base
+from datetime import datetime as dt
 
 
 class ProductGroup(Base):
@@ -25,7 +26,9 @@ class ProductGroup(Base):
     position = Column(String(50), nullable=True)
     modifier_schema_id = Column(String(50), nullable=True)
     visibility_filter = Column(String(255), nullable=True)
-
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)
 
     items = relationship("Item", back_populates="product_group", cascade="all, delete-orphan")
 

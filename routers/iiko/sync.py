@@ -14,7 +14,7 @@ from schemas.users import UserArrayResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["iiko_sync"])
 
 
 @router.post("/organizations")
@@ -63,6 +63,32 @@ async def sync_employees(
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка синхронизации сотрудников: {str(e)}"
+        )
+
+
+@router.post("/terminal-groups")
+async def sync_terminal_groups(
+    organization_id: str = None,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Синхронизация групп терминалов с iiko API
+    """
+    try:
+        logger.info(f"Запуск синхронизации групп терминалов для организации: {organization_id}")
+        result = await iiko_sync.sync_terminal_groups(db, organization_id)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация групп терминалов завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации групп терминалов: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка синхронизации групп терминалов: {str(e)}"
         )
 
 

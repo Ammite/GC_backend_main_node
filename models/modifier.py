@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Boolean, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Numeric, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Modifier(Base):
@@ -17,11 +18,12 @@ class Modifier(Base):
     hide_if_default_amount = Column(Boolean, default=False)
     child_modifiers_have_min_max_restrictions = Column(Boolean, default=False)
     splittable = Column(Boolean, default=False)
-
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)
 
     item_id = Column(Integer, ForeignKey("items.id"), nullable=True)
     item = relationship("Item", back_populates="modifiers")
-
 
     parent_id = Column(Integer, ForeignKey("modifiers.id"), nullable=True)
     children = relationship("Modifier", backref="parent", remote_side=[id])
