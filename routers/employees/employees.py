@@ -5,7 +5,7 @@ from datetime import datetime
 from utils.security import get_current_user
 from database.database import get_db
 from services.employees.employees_service import get_employees
-from schemas.employees import EmployeeArrayResponse
+from schemas.employees import EmployeeArrayResponse, EmployeeWithShiftsArrayResponse
 from schemas.fines import CreateFineRequest, CreateFineResponse, UpdateShiftTimeRequest, UpdateShiftTimeResponse
 from models.penalty import Penalty
 from models.user import User
@@ -19,14 +19,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="", tags=["employees"])
 
 
-@router.get("/employees", response_model=EmployeeArrayResponse)
+@router.get("/employees", response_model=EmployeeWithShiftsArrayResponse)
 def list_employees(
     name: Optional[str] = Query(default=None),
     login: Optional[str] = Query(default=None),
     organization_id: Optional[int] = Query(default=None),
     role_code: Optional[str] = Query(default=None),
     deleted: Optional[bool] = Query(default=None),
-    limit: int = Query(default=0, ge=1, le=5000),
+    status: Optional[str] = Query(default=None),
+    date: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=0, le=5000, description="Количество записей. 0 = все записи без ограничения"),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
@@ -41,6 +43,8 @@ def list_employees(
         organization_id=organization_id,
         role_code=role_code,
         deleted=deleted,
+        status=status,
+        date=date,
         limit=limit,
         offset=offset,
     )
@@ -79,17 +83,15 @@ def create_fine(
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
         
-        # Получаем пользователя
+        # Пытаемся найти пользователя системы по iiko_id
         user_obj = db.query(User).filter(User.iiko_id == employee.iiko_id).first()
         
-        if not user_obj:
-            raise HTTPException(status_code=404, detail="User not found for this employee")
-        
-        # Создаем штраф
+        # Создаем штраф (используем employee_id всегда, user_id - если найден)
         new_penalty = Penalty(
             penalty_sum=fine_data.amount,
             description=fine_data.reason,
-            roles_id=user_obj.id
+            employee_id=employee_id,
+            user_id=user_obj.id if user_obj else None
         )
         
         db.add(new_penalty)

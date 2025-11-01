@@ -8,9 +8,10 @@ class UserReward(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, index=True)
     iiko_id = Column(String(50), unique=True, nullable=True)
-    reward_id = Column(Integer, ForeignKey("rewards.id"))
-    user_id = Column(Integer, ForeignKey("users.id"))
-    current_progress = Column(Integer)
+    reward_id = Column(Integer, ForeignKey("rewards.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Связь с пользователем системы
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Связь с сотрудником из iiko
+    current_progress = Column(Integer, default=0)
     
     created_at = Column(DateTime, default=dt.now)
     updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

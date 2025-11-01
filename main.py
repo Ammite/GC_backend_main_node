@@ -1,5 +1,5 @@
 import fastapi
-from fastapi import Request, HTTPException, Depends
+from fastapi import Request, HTTPException, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import logging
@@ -120,10 +120,10 @@ async def get_openapi_schema(username: str = Depends(verify_docs_credentials)):
 # CORS - разрешаем все origins для работы с клиентскими приложениями на разных IP
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r".*",  # Разрешаем любые origins (IP-адреса, домены и т.д.)
+    allow_origin_regex=r"https?://.*",  # Разрешаем любые HTTP/HTTPS origins
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     expose_headers=["*"],
 )
 
@@ -131,7 +131,20 @@ app.add_middleware(
 @app.middleware("http")
 async def check_token(request: Request, call_next):
     # Пропускаем авторизацию для документации, статических файлов и OPTIONS запросов (CORS preflight)
-    if request.method == "OPTIONS" or request.url.path in ["/login", "/register", "/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
+    if request.method == "OPTIONS":
+        # Возвращаем явный ответ для OPTIONS запросов с CORS заголовками
+        origin = request.headers.get("origin")
+        headers = {
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, Origin, X-Requested-With",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600"
+        }
+        if origin:
+            headers["Access-Control-Allow-Origin"] = origin
+        return Response(status_code=200, headers=headers)
+    
+    if request.url.path in ["/login", "/register", "/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
         response = await call_next(request)
         return response
     
@@ -151,9 +164,25 @@ async def check_token(request: Request, call_next):
     api_token_ok = query_token == config.API_VALID_TOKEN or (auth_header == config.API_VALID_TOKEN)
 
     if not (jwt_ok or api_token_ok):
+        # Добавляем CORS заголовки даже при ошибке авторизации
+        origin = request.headers.get("origin")
+        if origin:
+            raise HTTPException(
+                status_code=401, 
+                detail="Invalid or missing token",
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Credentials": "true"
+                }
+            )
         raise HTTPException(status_code=401, detail="Invalid or missing token")
 
     response = await call_next(request)
+    # Добавляем CORS заголовки ко всем ответам
+    origin = request.headers.get("origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 
@@ -207,3 +236,19 @@ def include_routers(application: fastapi.FastAPI) -> None:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8008)
+
+
+
+'''
+
+TODO list:
+1) Исправить эндпоинты: 
+    - /menu - там чисто список названий, а остального нет
+    - /orders - там чисто список названий (и то, не правильно), а остального нет
+2) Доработать аналитику: 
+    - Не все данные правильно считаются (не те поля)
+    - Нет некоторых подсчетов, которые нужны
+3) Не работает salary
+4) Не работает правильно создание квестов. Там систему надо обсуждать
+
+'''
