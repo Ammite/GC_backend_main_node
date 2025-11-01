@@ -117,20 +117,21 @@ async def get_redoc_documentation(username: str = Depends(verify_docs_credential
 async def get_openapi_schema(username: str = Depends(verify_docs_credentials)):
     """Защищенная OpenAPI схема"""
     return app.openapi()
-# CORS
+# CORS - разрешаем все origins для работы с клиентскими приложениями на разных IP
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r".*",  # Разрешаем любые origins (IP-адреса, домены и т.д.)
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
 @app.middleware("http")
 async def check_token(request: Request, call_next):
-    # Пропускаем авторизацию для документации и статических файлов
-    if request.url.path in ["/login", "/register", "/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
+    # Пропускаем авторизацию для документации, статических файлов и OPTIONS запросов (CORS preflight)
+    if request.method == "OPTIONS" or request.url.path in ["/login", "/register", "/docs", "/redoc", "/openapi.json"] or request.url.path.startswith("/static/"):
         response = await call_next(request)
         return response
     
