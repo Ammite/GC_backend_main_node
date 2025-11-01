@@ -453,9 +453,78 @@ class IikoSync:
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
     
+    async def sync_restaurant_sections(self, db: Session, organization_id: Optional[str] = None) -> Dict[str, int]:
+        """Синхронизация секций ресторана"""
+        try:
+            sections_data = await self.service.get_restaurant_sections(organization_id)
+            
+            if not sections_data:
+                logger.warning("Не удалось получить данные секций ресторана")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_restaurant_sections(sections_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for section_data in parsed_data:
+                try:
+                    # Находим терминальную группу по iiko_id
+                    terminal_group_iiko_id = section_data.get("terminal_group_iiko_id")
+                    terminal_group = None
+                    if terminal_group_iiko_id:
+                        terminal_group = db.query(TerminalGroup).filter(
+                            TerminalGroup.iiko_id == terminal_group_iiko_id
+                        ).first()
+                    
+                    if not terminal_group:
+                        logger.warning(f"Не найдена терминальная группа с iiko_id {terminal_group_iiko_id} для секции {section_data.get('iiko_id')}")
+                        errors += 1
+                        continue
+                    
+                    # Ищем существующую секцию по iiko_id
+                    existing_section = db.query(RestaurantSection).filter(
+                        RestaurantSection.iiko_id == section_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_section:
+                        # Обновляем существующую секцию
+                        existing_section.name = section_data.get("name", "")
+                        existing_section.terminal_group_id = terminal_group.id
+                        existing_section.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        # Создаем новую секцию
+                        new_section = RestaurantSection(
+                            iiko_id=section_data["iiko_id"],
+                            name=section_data.get("name", ""),
+                            terminal_group_id=terminal_group.id,
+                            created_at=datetime.now(),
+                            updated_at=datetime.now()
+                        )
+                        db.add(new_section)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации секции {section_data.get('name')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация секций ресторана завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации секций ресторана: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
     async def sync_tables(self, db: Session, organization_id: Optional[str] = None) -> Dict[str, int]:
         """Синхронизация столов"""
         try:
+            # Сначала синхронизируем секции, чтобы они существовали
+            await self.sync_restaurant_sections(db, organization_id)
+            
             tables_data = await self.service.get_tables(organization_id)
             
             if not tables_data:
@@ -470,17 +539,36 @@ class IikoSync:
             
             for table_data in parsed_data:
                 try:
+                    # Находим секцию по section_iiko_id
+                    section_iiko_id = table_data.get("section_iiko_id")
+                    section = None
+                    if section_iiko_id:
+                        section = db.query(RestaurantSection).filter(
+                            RestaurantSection.iiko_id == section_iiko_id
+                        ).first()
+                    
+                    if not section:
+                        logger.warning(f"Не найдена секция с iiko_id {section_iiko_id} для стола {table_data.get('iiko_id')}")
+                        errors += 1
+                        continue
+                    
+                    # Удаляем section_iiko_id из данных и добавляем section_id
+                    table_data.pop("section_iiko_id", None)
+                    table_data["section_id"] = section.id
+                    
                     existing_table = db.query(Table).filter(
                         Table.iiko_id == table_data["iiko_id"]
                     ).first()
                     
                     if existing_table:
+                        # Обновляем существующий стол
                         for key, value in table_data.items():
                             if key not in ["created_at"]:
                                 setattr(existing_table, key, value)
                         existing_table.updated_at = datetime.now()
                         updated += 1
                     else:
+                        # Создаем новый стол
                         new_table = Table(**table_data)
                         db.add(new_table)
                         created += 1
@@ -578,11 +666,14 @@ class IikoSync:
             # Синхронизируем роли
             results["roles"] = await self.sync_roles(db)
             
-            # Синхронизируем столы
-            results["tables"] = await self.sync_tables(db, organization_id)
-            
-            # Синхронизируем терминалы
+            # Синхронизируем терминалы (нужны для секций)
             results["terminals"] = await self.sync_terminals(db, organization_id)
+            
+            # Синхронизируем секции ресторана (нужны для столов)
+            results["restaurant_sections"] = await self.sync_restaurant_sections(db, organization_id)
+            
+            # Синхронизируем столы (зависят от секций)
+            results["tables"] = await self.sync_tables(db, organization_id)
             
             logger.info("Полная синхронизация данных завершена успешно")
             return results
@@ -648,14 +739,9 @@ class IikoSync:
         
         return None
 
-    async def sync_transactions(self, db: Session, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, int]:
+    async def sync_transactions(self, db: Session, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Dict[str, int]:
         """Синхронизация транзакций"""  
         try:
-            if from_date is None:
-                # format 2025-09-30T00:00:00.000
-                from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
-            if to_date is None:
-                to_date = datetime.now().strftime("%Y-%m-%d") + "T00:00:00.000"
             transactions_data = await self.service.get_transactions(from_date, to_date)
             
             if not transactions_data:
@@ -671,6 +757,7 @@ class IikoSync:
             created = 0
             updated = 0
             errors = 0
+            didnt_find_unique_key = 0
             
             for trans_data in parsed_data:
                 try:
@@ -678,7 +765,8 @@ class IikoSync:
                     existing_trans = self._find_existing_transaction(db, trans_data)
                     
                     if not existing_trans:
-                        logger.warning(f"Не удалось найти уникальный ключ для транзакции: order_id={trans_data.get('order_id')}, order_num={trans_data.get('order_num')}, product_id={trans_data.get('product_id')}, date_time={trans_data.get('date_time')}, amount={trans_data.get('amount')}")
+                        # logger.warning(f"Не удалось найти уникальный ключ для транзакции: order_id={trans_data.get('order_id')}, order_num={trans_data.get('order_num')}, product_id={trans_data.get('product_id')}, date_time={trans_data.get('date_time')}, amount={trans_data.get('amount')}")
+                        didnt_find_unique_key += 1
                     else:
                         logger.debug(f"Найдена существующая транзакция для обновления")
                     
@@ -717,21 +805,16 @@ class IikoSync:
             
             db.commit()
             logger.info(f"Синхронизация транзакций завершена: создано {created}, обновлено {updated}, ошибок {errors}")
-            return {"created": created, "updated": updated, "errors": errors}
+            return {"created": created, "updated": updated, "errors": errors, "didnt_find_unique_key": didnt_find_unique_key}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации транзакций: {e}")
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
 
-    async def sync_sales(self, db: Session, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Dict[str, int]:
+    async def sync_sales(self, db: Session, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Dict[str, int]:
         """Синхронизация продаж"""  
         try:
-            if from_date is None:
-                # format 2025-09-30T00:00:00.000
-                from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
-            if to_date is None:
-                to_date = datetime.now().strftime("%Y-%m-%d") + "T00:00:00.000"
             sales_data = await self.service.get_sales(from_date, to_date)
             
             if not sales_data:

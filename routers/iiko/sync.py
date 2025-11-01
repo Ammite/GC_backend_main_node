@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 import logging
+from datetime import datetime, timedelta
 
 from database.database import get_db
 from services.iiko import iiko_sync
@@ -111,6 +112,32 @@ async def sync_roles(db: Session = Depends(get_db)) -> Dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"Ошибка синхронизации ролей: {str(e)}"
+        )
+
+
+@router.post("/restaurant-sections")
+async def sync_restaurant_sections(
+    organization_id: str = None,
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Синхронизация секций ресторана с iiko API
+    """
+    try:
+        logger.info(f"Запуск синхронизации секций ресторана для организации: {organization_id}")
+        result = await iiko_sync.sync_restaurant_sections(db, organization_id)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация секций ресторана завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации секций ресторана: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка синхронизации секций ресторана: {str(e)}"
         )
 
 
@@ -257,7 +284,29 @@ async def sync_transactions(
     """
     try:
         logger.info(f"Запуск синхронизации транзакций для организации")
-        result = await iiko_sync.sync_transactions(db, from_date, to_date)
+        if from_date is None:
+            from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
+        if to_date is None:
+            to_date = datetime.now().strftime("%Y-%m-%d") + "T00:00:00.000"
+        
+        result = {
+            "created": 0,
+            "updated": 0,
+            "errors": 0,
+            "didnt_find_unique_key": 0
+        }
+        from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        while from_date < to_date:
+            temp_to_date = from_date + timedelta(days=1)
+            if temp_to_date > to_date:
+                temp_to_date = to_date
+            sync_result = await iiko_sync.sync_transactions(db, from_date, temp_to_date)
+            result["created"] += sync_result.get("created", 0)
+            result["updated"] += sync_result.get("updated", 0)
+            result["errors"] += sync_result.get("errors", 0)
+            result["didnt_find_unique_key"] += sync_result.get("didnt_find_unique_key", 0)
+            from_date = temp_to_date
         
         return {
             "success": True,
@@ -286,7 +335,27 @@ async def sync_sales(
     """
     try:
         logger.info(f"Запуск синхронизации продаж")
-        result = await iiko_sync.sync_sales(db, from_date, to_date)
+
+        if from_date is None:
+            from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
+        if to_date is None:
+            to_date = datetime.now().strftime("%Y-%m-%d") + "T00:00:00.000"
+        result = {
+            "created": 0,
+            "updated": 0,
+            "errors": 0
+        }
+        from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        while from_date < to_date:
+            temp_to_date = from_date + timedelta(days=1)
+            if temp_to_date > to_date:
+                temp_to_date = to_date
+            sync_result = await iiko_sync.sync_sales(db, from_date, temp_to_date)
+            result["created"] += sync_result.get("created", 0)
+            result["updated"] += sync_result.get("updated", 0)
+            result["errors"] += sync_result.get("errors", 0)
+            from_date = temp_to_date
         
         return {
             "success": True,
