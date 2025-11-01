@@ -480,16 +480,54 @@ class IikoParser:
         return parsed_attendance
 
     @staticmethod
+    def parse_restaurant_sections(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг секций ресторана"""
+        if not data:
+            return []
+        
+        # Проверяем, что data это список
+        if not isinstance(data, list):
+            logger.error(f"Ожидался список в parse_restaurant_sections, получен тип: {type(data)}")
+            return []
+        
+        parsed_sections = []
+        for section in data:
+            # Проверяем, что section это словарь
+            if not isinstance(section, dict):
+                logger.warning(f"Секция должна быть словарем в parse_restaurant_sections, получен тип: {type(section)}, пропускаем")
+                continue
+            
+            parsed_section = {
+                "iiko_id": section.get("id"),
+                "name": section.get("name", ""),
+                "terminal_group_iiko_id": section.get("terminalGroupId")  # Это iiko_id терминальной группы
+            }
+            parsed_sections.append(parsed_section)
+        
+        logger.info(f"Парсинг секций ресторана: {len(parsed_sections)} записей")
+        return parsed_sections
+
+    @staticmethod
     def parse_tables(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
         """Парсинг столов ресторана"""
         if not data:
             return []
         
+        # Проверяем, что data это список
+        if not isinstance(data, list):
+            logger.error(f"Ожидался список в parse_tables, получен тип: {type(data)}")
+            return []
+        
         parsed_tables = []
         for table in data:
+            # Проверяем, что table это словарь
+            if not isinstance(table, dict):
+                logger.warning(f"Стол должен быть словарем в parse_tables, получен тип: {type(table)}, пропускаем")
+                continue
+            
             parsed_table = {
                 "iiko_id": table.get("id"),
-                "section_id": table.get("sectionId"),  # Нужно будет получить из restaurant_sections
+                "section_iiko_id": table.get("sectionId"),  # iiko_id секции, нужно будет найти section_id при синхронизации
                 "number": table.get("number", 0),
                 "name": table.get("name", ""),
                 "revision": table.get("revision", ""),
