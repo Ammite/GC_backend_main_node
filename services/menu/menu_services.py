@@ -22,6 +22,7 @@ def get_all_menu_items(
         query = query.filter(Item.name.ilike(f"%{name}%"))
 
     query = query.filter(Item.deleted == False)  # noqa: E712
+    query = query.filter(Item.type == 'dish')
     items = query.offset(offset).limit(limit).all()
 
-    return [ItemResponse(name=i.name) for i in items]
+    return [ItemResponse(id=i.id, name=i.name, price=float(i.price)) for i in items]
