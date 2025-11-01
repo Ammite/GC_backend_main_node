@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, Numeric
+from sqlalchemy import Column, Integer, String, Boolean, Numeric, DateTime
 from database.database import Base
+from datetime import datetime as dt
 
 
 class AttendanceType(Base):
@@ -13,3 +14,6 @@ class AttendanceType(Base):
 
     pay_rate = Column(Numeric(10, 2), default=1.0)
     status = Column(Boolean, default=True)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, ForeignKey, TIMESTAMP, Numeric, String
+from sqlalchemy import Column, Integer, ForeignKey, TIMESTAMP, Numeric, String, DateTime
 from sqlalchemy.sql import func
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Reward(Base):
@@ -14,3 +15,6 @@ class Reward(Base):
     item_id = Column(Integer, ForeignKey("items.id"), nullable=False)
     end_goal = Column(Integer, nullable=False)
     prize_sum = Column(Numeric(10, 2), nullable=False)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

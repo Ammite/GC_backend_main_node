@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from database.database import Base
+from datetime import datetime as dt
 
 
 class ScheduleType(Base):
@@ -16,3 +17,6 @@ class ScheduleType(Base):
     comment = Column(String(255), nullable=True)
 
     overtime = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

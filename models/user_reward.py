@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, ForeignKey, String
+from sqlalchemy import Column, Integer, ForeignKey, String, DateTime
 from database.database import Base
+from datetime import datetime as dt
 
 
 class UserReward(Base):
@@ -10,3 +11,6 @@ class UserReward(Base):
     reward_id = Column(Integer, ForeignKey("rewards.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
     current_progress = Column(Integer)
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

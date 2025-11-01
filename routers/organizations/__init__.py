@@ -1,2 +1,1 @@
-# Маркер пакета для автоподключения роутеров
-from .organizations import router
+from .organizations import router  # re-export для удобного импорта

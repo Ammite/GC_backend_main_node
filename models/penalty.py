@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, Text, ForeignKey, Numeric, String
+from sqlalchemy import Column, Integer, Text, ForeignKey, Numeric, String, DateTime
 from database.database import Base
+from datetime import datetime as dt
 
 
 class Penalty(Base):
@@ -10,3 +11,6 @@ class Penalty(Base):
     penalty_sum = Column(Numeric(10, 2), nullable=False)
     description = Column(Text, nullable=True)
     roles_id = Column(Integer, ForeignKey("users.id"))
+    
+    created_at = Column(DateTime, default=dt.now)
+    updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

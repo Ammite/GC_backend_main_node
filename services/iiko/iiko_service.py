@@ -1,3 +1,4 @@
+import json
 import httpx
 import logging
 import asyncio
@@ -33,7 +34,7 @@ class IikoService:
         
         # Общие настройки
         self.timeout = 60  # Увеличиваем общий timeout до 60 секунд
-        self.cloud_request_delay = 60  # Задержка между Cloud API запросами (секунды)
+        self.cloud_request_delay = 15  # Задержка между Cloud API запросами (секунды)
         self.server_request_delay = 0.5  # Задержка между Server API запросами (секунды)
 
     async def _add_request_delay(self, api_type: IikoApiType):
@@ -268,26 +269,28 @@ class IikoService:
             data={"organizationId": organization_id, "employeeId": employee_id}
         )
 
-    async def get_cloud_tables(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение столов ресторана (Cloud API)"""
+    async def get_cloud_restaurant_sections(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение секций ресторана (Cloud API)"""
         if organization_id:
             # Сначала получаем терминалы для организации
             terminals_data = await self.get_cloud_terminals(organization_id)
             if not terminals_data:
                 logger.warning(f"Не удалось получить терминалы для организации {organization_id}")
-                return None
+                return []
             
             # Извлекаем ID терминальных групп
             terminal_group_ids = []
             for terminal in terminals_data:
-                if terminal.get("terminalGroupId"):
-                    terminal_group_ids.append(terminal["terminalGroupId"])
+                terminal_id = terminal.get("id")
+                if terminal_id:
+                    terminal_group_ids.append(terminal_id)
             
             if not terminal_group_ids:
                 logger.warning(f"Не найдены терминальные группы для организации {organization_id}")
-                return None
+                return []
             
-            return await self._make_request(
+            # Запрашиваем секции через API
+            response = await self._make_request(
                 IikoApiType.CLOUD,
                 "/api/1/reserve/available_restaurant_sections",
                 method="POST",
@@ -296,11 +299,133 @@ class IikoService:
                     "terminalGroupIds": terminal_group_ids
                 }
             )
+            
+            if not response or not isinstance(response, dict):
+                logger.warning(f"Не удалось получить секции для организации {organization_id}")
+                return []
+            
+            # Извлекаем секции
+            sections = []
+            if "restaurantSections" in response:
+                restaurant_sections = response["restaurantSections"]
+                if isinstance(restaurant_sections, list):
+                    for section in restaurant_sections:
+                        if isinstance(section, dict):
+                            sections.append({
+                                "id": section.get("id"),
+                                "name": section.get("name", ""),
+                                "terminalGroupId": section.get("terminalGroupId")
+                            })
+            
+            logger.info(f"Получено {len(sections)} секций для организации {organization_id}")
+            return sections
+        else:
+            # Если organization_id не указан, получаем секции из всех организаций
+            organizations = await self.get_organizations()
+            if not organizations:
+                return []
+            
+            all_sections = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    sections = await self.get_cloud_restaurant_sections(org_id)  # Рекурсивный вызов
+                    if sections:
+                        all_sections.extend(sections)
+            
+            return all_sections
+
+    async def get_cloud_tables(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение столов ресторана (Cloud API)"""
+        if organization_id:
+            # Сначала получаем терминалы для организации
+            terminals_data = await self.get_cloud_terminals(organization_id)
+            if not terminals_data:
+                logger.warning(f"Не удалось получить терминалы для организации {organization_id}")
+                return []
+            
+            # Извлекаем ID терминальных групп
+            terminal_group_ids = []
+            for terminal in terminals_data:
+                # ID терминальной группы находится в поле "id" каждого терминала
+                terminal_id = terminal.get("id")
+                if terminal_id:
+                    terminal_group_ids.append(terminal_id)
+                    logger.debug(f"Найден терминал с ID: {terminal_id}, название: {terminal.get('name', 'N/A')}")
+            
+            if not terminal_group_ids:
+                logger.warning(f"Не найдены терминальные группы для организации {organization_id}. Получено терминалов: {len(terminals_data) if terminals_data else 0}")
+                return []
+            
+            logger.info(f"Найдено {len(terminal_group_ids)} терминальных групп для организации {organization_id}")
+            
+            # Запрашиваем столы через API
+            response = await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/reserve/available_restaurant_sections",
+                method="POST",
+                data={
+                    "organizationId": organization_id,
+                    "terminalGroupIds": terminal_group_ids
+                }
+            )
+            
+            if not response:
+                logger.warning(f"Не удалось получить столы для организации {organization_id}")
+                return []
+            
+            # Извлекаем все столы из всех секций ресторана
+            # Структура ответа: {"restaurantSections": [...], "revision": ...}
+            # Каждая секция содержит: {"id": ..., "terminalGroupId": ..., "name": ..., "tables": [...]}
+            all_tables = []
+            
+            # Проверяем, что response это словарь
+            if not isinstance(response, dict):
+                logger.error(f"Ожидался словарь в ответе, получен тип: {type(response)}")
+                return []
+            
+            if "restaurantSections" in response:
+                sections = response["restaurantSections"]
+                if not isinstance(sections, list):
+                    logger.error(f"restaurantSections должен быть списком, получен тип: {type(sections)}")
+                    return []
+                
+                for section in sections:
+                    # Проверяем, что section это словарь
+                    if not isinstance(section, dict):
+                        logger.warning(f"Секция должна быть словарем, получен тип: {type(section)}, пропускаем")
+                        continue
+                    
+                    section_id = section.get("id")
+                    section_name = section.get("name", "")
+                    terminal_group_id = section.get("terminalGroupId")
+                    
+                    if "tables" in section:
+                        tables = section["tables"]
+                        if not isinstance(tables, list):
+                            logger.warning(f"tables должен быть списком в секции {section_id}, получен тип: {type(tables)}, пропускаем")
+                            continue
+                        
+                        for table in tables:
+                            # Проверяем, что table это словарь
+                            if not isinstance(table, dict):
+                                logger.warning(f"Стол должен быть словарем, получен тип: {type(table)}, пропускаем")
+                                continue
+                            
+                            # Добавляем к каждому столу информацию о секции
+                            table_with_section = table.copy()
+                            table_with_section["sectionId"] = section_id
+                            table_with_section["restaurantSectionName"] = section_name
+                            table_with_section["terminalGroupId"] = terminal_group_id
+                            all_tables.append(table_with_section)
+            
+            logger.info(f"Извлечено {len(all_tables)} столов из {len(response.get('restaurantSections', []))} секций для организации {organization_id}")
+            return all_tables
         else:
             # Если organization_id не указан, получаем столы из всех организаций
             organizations = await self.get_organizations()
             if not organizations:
-                return None
+                return []
             
             all_tables = []
             for org in organizations:
@@ -312,6 +437,47 @@ class IikoService:
             
             return all_tables
 
+    async def get_cloud_terminal_groups(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп терминалов (Cloud API)"""
+        if organization_id:
+            result = await self._make_request(
+                IikoApiType.CLOUD,
+                "/api/1/terminal_groups",
+                method="POST",
+                data={"organizationIds": [organization_id]}
+            )
+            logger.info(f"Группы терминалов: {json.dumps(result, indent=4, ensure_ascii=False)}")
+            # Извлекаем группы терминалов из структуры ответа
+            if result and "terminalGroups" in result:
+                # Возвращаем сами группы с информацией об организации
+                groups = []
+                for group in result["terminalGroups"]:
+                    if "items" in group and group["items"]:
+                        for item in group["items"]:
+                            groups.append({
+                                "id": item.get("id"),
+                                "name": item.get("name"),
+                                "organizationId": organization_id
+                            })
+                return groups
+            return None
+        else:
+            # Если organization_id не указан, получаем группы терминалов из всех организаций
+            organizations = await self.get_organizations()
+            if not organizations:
+                return None
+            
+            all_groups = []
+            for org in organizations:
+                org_id = org.get("id")
+                if org_id:
+                    groups = await self.get_cloud_terminal_groups(org_id)
+                    logger.info(f"Группы терминалов: {json.dumps(groups, indent=4, ensure_ascii=False)}")
+                    if groups:
+                        all_groups.extend(groups)
+            
+            return all_groups
+
     async def get_cloud_terminals(self, organization_id: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
         """Получение терминалов (Cloud API)"""
         if organization_id:
@@ -321,6 +487,7 @@ class IikoService:
                 method="POST",
                 data={"organizationIds": [organization_id]}
             )
+            logger.info(f"Терминалы: {json.dumps(result, indent=4, ensure_ascii=False)}")
             # Извлекаем терминалы из структуры ответа
             if result and "terminalGroups" in result:
                 terminals = []
@@ -340,6 +507,7 @@ class IikoService:
                 org_id = org.get("id")
                 if org_id:
                     terminals = await self.get_cloud_terminals(org_id)
+                    logger.info(f"Терминалы: {json.dumps(terminals, indent=4, ensure_ascii=False)}")
                     if terminals:
                         all_terminals.extend(terminals)
             
@@ -593,120 +761,30 @@ class IikoService:
             params=params
         )
 
-    async def get_server_sales_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
-        """Получение отчета по продажам (Server API)"""
-        return await self._make_request(
-            IikoApiType.SERVER,
-            "/resto/api/v2/reports/olap",
-            method="POST",
-            data=report_data
-        )
+    async def get_transactions(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение транзакций (Server API) для заданного периода"""
+        
+        params = data_frames.iiko_transactions_data_frame.copy()
+        params["filters"]["DateTime.Typed"]["from"] = from_date.isoformat()
+        params["filters"]["DateTime.Typed"]["to"] = to_date.isoformat()
+        result = await self.get_server_transactions_report(params)
+        if result and "data" in result:
+            logger.info(f"Получено транзакций за период с {from_date.isoformat()} по {to_date.isoformat()}: {len(result['data'])}")
+            return result["data"]
+        return None
 
-    async def get_transactions(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение транзакций (Server API) с разбивкой по дням для больших диапазонов"""
-        if not from_date or not to_date:
-            # Если даты не указаны, делаем обычный запрос
-            params = data_frames.iiko_transactions_data_frame
-            if from_date:
-                params["filters"]["DateTime.Typed"]["from"] = from_date
-            if to_date:
-                params["filters"]["DateTime.Typed"]["to"] = to_date
-            result = await self.get_server_transactions_report(params)
-            if result and "data" in result:
-                return result["data"]
-            return None
-        
-        # Парсим даты
-        try:
-            start_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-            end_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-        except Exception as e:
-            logger.error(f"Ошибка парсинга дат: {e}")
-            return None
-        
-        # Разбиваем на дни и собираем данные
-        all_transactions = []
-        current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        while current_date < end_date:
-            next_date = current_date + timedelta(days=1)
-            
-            # Убеждаемся, что не выходим за пределы end_date
-            if next_date > end_date:
-                next_date = end_date
-            
-            # Формируем параметры для запроса за один день
-            day_from = current_date.isoformat()
-            day_to = next_date.isoformat()
-            
-            logger.info(f"Запрос транзакций с {day_from} по {day_to}")
-            
-            params = data_frames.iiko_transactions_data_frame.copy()
-            params["filters"]["DateTime.Typed"]["from"] = day_from
-            params["filters"]["DateTime.Typed"]["to"] = day_to
-            
-            result = await self.get_server_transactions_report(params)
-            if result and "data" in result:
-                all_transactions.extend(result["data"])
-                logger.info(f"Получено транзакций за день: {len(result['data'])}")
-            
-            current_date = next_date
-        
-        logger.info(f"Всего получено транзакций: {len(all_transactions)}")
-        return all_transactions if all_transactions else None
+    async def get_sales(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Optional[List[Dict[Any, Any]]]:
+        """Получение продаж (Server API) для заданного периода"""
 
-    async def get_sales(self, from_date: Optional[str] = None, to_date: Optional[str] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение продаж (Server API) с разбивкой по дням для больших диапазонов"""
-        if not from_date or not to_date:
-            # Если даты не указаны, делаем обычный запрос
-            params = data_frames.iiko_sales_data_frame
-            if from_date:
-                params["filters"]["OpenDate.Typed"]["from"] = from_date
-            if to_date:
-                params["filters"]["OpenDate.Typed"]["to"] = to_date
-            result = await self.get_server_sales_report(params)
-            if result and "data" in result:
-                return result["data"]
-            return None
+        params = data_frames.iiko_sales_data_frame.copy()
+        params["filters"]["OpenDate.Typed"]["from"] = from_date.isoformat()
+        params["filters"]["OpenDate.Typed"]["to"] = to_date.isoformat()
+        result = await self.get_server_sales_report(params)
         
-        # Парсим даты
-        try:
-            start_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-            end_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-        except Exception as e:
-            logger.error(f"Ошибка парсинга дат: {e}")
-            return None
-        
-        # Разбиваем на дни и собираем данные
-        all_sales = []
-        current_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        while current_date < end_date:
-            next_date = current_date + timedelta(days=1)
-            
-            # Убеждаемся, что не выходим за пределы end_date
-            if next_date > end_date:
-                next_date = end_date
-            
-            # Формируем параметры для запроса за один день
-            day_from = current_date.isoformat()
-            day_to = next_date.isoformat()
-            
-            logger.info(f"Запрос продаж с {day_from} по {day_to}")
-            
-            params = data_frames.iiko_sales_data_frame.copy()
-            params["filters"]["OpenDate.Typed"]["from"] = day_from
-            params["filters"]["OpenDate.Typed"]["to"] = day_to
-            
-            result = await self.get_server_sales_report(params)
-            if result and "data" in result:
-                all_sales.extend(result["data"])
-                logger.info(f"Получено продаж за день: {len(result['data'])}")
-            
-            current_date = next_date
-        
-        logger.info(f"Всего получено продаж: {len(all_sales)}")
-        return all_sales if all_sales else None
+        if result and "data" in result:
+            logger.info(f"Получено продаж за период с {from_date.isoformat()} по {to_date.isoformat()}: {len(result['data'])}")
+            return result["data"]
+        return None
 
     async def get_server_transactions_report(self, report_data: Dict[Any, Any]) -> Optional[Dict[Any, Any]]:
         """Получение отчета по транзакциям (Server API)"""
@@ -791,21 +869,29 @@ class IikoService:
             return await self.get_cloud_menu(organization_id)
 
     async def get_employees(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
-        """Получение сотрудников (пробует Cloud, затем Server)"""
-        if prefer_cloud:
-            result = await self.get_cloud_employees(organization_id)
-            if result:
-                return result
-            return await self.get_server_employees()
-        else:
-            result = await self.get_server_employees()
-            if result:
-                return result
-            return await self.get_cloud_employees(organization_id)
+        """Получение сотрудников (только Server API)"""
+        result = await self.get_server_employees()
+        if result:
+            return result
+        return None
 
     async def get_organizations(self, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
         """Получение организаций (только Cloud API)"""
         return await self.get_cloud_organizations()
+
+    async def get_restaurant_sections(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение секций ресторана (пробует Cloud, затем Server)"""
+        if prefer_cloud:
+            result = await self.get_cloud_restaurant_sections(organization_id)
+            if result:
+                return result
+            # Server API не имеет прямого аналога для секций
+            return None
+        else:
+            result = await self.get_cloud_restaurant_sections(organization_id)
+            if result:
+                return result
+            return None
 
     async def get_tables(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
         """Получение столов (пробует Cloud, затем Server)"""
@@ -817,6 +903,20 @@ class IikoService:
             return None
         else:
             result = await self.get_cloud_tables(organization_id)
+            if result:
+                return result
+            return None
+
+    async def get_terminal_groups(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
+        """Получение групп терминалов (пробует Cloud, затем Server)"""
+        if prefer_cloud:
+            result = await self.get_cloud_terminal_groups(organization_id)
+            if result:
+                return result
+            # Server API не имеет прямого аналога для групп терминалов
+            return None
+        else:
+            result = await self.get_cloud_terminal_groups(organization_id)
             if result:
                 return result
             return None
