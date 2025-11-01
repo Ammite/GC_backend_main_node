@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from models.d_order import DOrder
-from schemas.orders import OrderResponse
+from models.organization import Organization
+from models.sales import Sales
+from models.restaurant_sections import RestaurantSection
+from schemas.orders import OrderResponse, OrderItemResponse
 
 
 def get_all_orders(
@@ -12,7 +15,7 @@ def get_all_orders(
     limit: int = 100,
     offset: int = 0,
 ) -> List[OrderResponse]:
-    query = db.query(DOrder)
+    query = db.query(DOrder).outerjoin(Organization, DOrder.organization_id == Organization.id)
 
     if organization_id is not None:
         query = query.filter(DOrder.organization_id == organization_id)
@@ -24,32 +27,129 @@ def get_all_orders(
     query = query.filter(DOrder.deleted == False)  # noqa: E712
     orders = query.offset(offset).limit(limit).all()
 
-    # Временно отдадим короткий ответ
-    return [OrderResponse(name=str(o.id)) for o in orders]
+    result = []
+    for order in orders:
+        # Получаем organization_name
+        organization_name = order.organization.name if order.organization else None
+        
+        # Получаем sales items по iiko_id заказа
+        sales_items = db.query(Sales).filter(
+            Sales.order_id == order.iiko_id,
+            Sales.delivery_is_delivery == 'ORDER_WITHOUT_DELIVERY',
+            Sales.deleted_with_writeoff == 'NOT_DELETED',
+            Sales.dish_discount_sum_int > 0
+        ).all()
+        
+        # Формируем список items
+        items = []
+        table_num = None
+        room_name = None
+        
+        for sale in sales_items:
+            # Получаем room name по restaurant_section_id
+            if sale.restaurant_section_id and not room_name:
+                section = db.query(RestaurantSection).filter(
+                    RestaurantSection.iiko_id == sale.restaurant_section_id
+                ).first()
+                if section:
+                    room_name = section.name
+            
+            # Берем table_num из первого sale
+            if sale.table_num and not table_num:
+                table_num = sale.table_num
+            
+            items.append(OrderItemResponse(
+                open_time=sale.open_time,
+                dish_name=sale.dish_name,
+                dish_amount_int=sale.dish_amount_int,
+                dish_category=sale.dish_category,
+                dish_group=sale.dish_group,
+                dish_discount_sum_int=float(sale.dish_discount_sum_int) if sale.dish_discount_sum_int else None,
+                restaurant_section_id=sale.restaurant_section_id,
+                table_num=sale.table_num,
+                order_waiter_id=sale.order_waiter_id,
+                pay_types=sale.pay_types,
+                product_cost_base_product_cost=float(sale.product_cost_base_product_cost) if sale.product_cost_base_product_cost else None,
+            ))
+        
+        result.append(OrderResponse(
+            id=order.id,
+            organization_name=organization_name,
+            table=table_num,
+            room=room_name,
+            status=order.state_order,
+            items=items,
+            bank_commission=float(order.bank_commission) if order.bank_commission else None,
+        ))
+    
+    return result
 
 
 def get_order_by_id(db: Session, order_id: int) -> Optional[OrderResponse]:
-    order = db.query(DOrder).filter(DOrder.id == order_id, DOrder.deleted == False).first()  # noqa: E712
-    return OrderResponse(name=str(order.id)) if order else None
+    order = db.query(DOrder).outerjoin(Organization, DOrder.organization_id == Organization.id).filter(
+        DOrder.id == order_id, DOrder.deleted == False  # noqa: E712
+    ).first()
+    
+    if not order:
+        return None
+    
+    # Получаем organization_name
+    organization_name = order.organization.name if order.organization else None
+    
+    # Получаем sales items по iiko_id заказа
+    sales_items = db.query(Sales).filter(
+        Sales.order_id == order.iiko_id,
+        Sales.delivery_is_delivery == 'ORDER_WITHOUT_DELIVERY',
+        Sales.deleted_with_writeoff == 'NOT_DELETED',
+        Sales.dish_discount_sum_int > 0
+    ).all()
+    
+    # Формируем список items
+    items = []
+    table_num = None
+    room_name = None
+    
+    for sale in sales_items:
+        # Получаем room name по restaurant_section_id
+        if sale.restaurant_section_id and not room_name:
+            section = db.query(RestaurantSection).filter(
+                RestaurantSection.iiko_id == sale.restaurant_section_id
+            ).first()
+            if section:
+                room_name = section.name
+        
+        # Берем table_num из первого sale
+        if sale.table_num and not table_num:
+            table_num = sale.table_num
+        
+        items.append(OrderItemResponse(
+            open_time=sale.open_time,
+            dish_name=sale.dish_name,
+            dish_amount_int=sale.dish_amount_int,
+            dish_category=sale.dish_category,
+            dish_group=sale.dish_group,
+            dish_discount_sum_int=float(sale.dish_discount_sum_int) if sale.dish_discount_sum_int else None,
+            restaurant_section_id=sale.restaurant_section_id,
+            table_num=sale.table_num,
+            order_waiter_id=sale.order_waiter_id,
+            pay_types=sale.pay_types,
+            product_cost_base_product_cost=float(sale.product_cost_base_product_cost) if sale.product_cost_base_product_cost else None,
+        ))
+    
+    return OrderResponse(
+        id=order.id,
+        organization_name=organization_name,
+        table=table_num,
+        room=room_name,
+        status=order.state_order,
+        items=items,
+        bank_commission=float(order.bank_commission) if order.bank_commission else None,
+    )
 
 
 def get_order_by_user(db: Session, user_id: int, limit: int = 100, offset: int = 0) -> List[OrderResponse]:
-    orders = (
-        db.query(DOrder)
-        .filter(DOrder.user_id == user_id, DOrder.deleted == False)  # noqa: E712
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return [OrderResponse(name=str(o.id)) for o in orders]
+    return get_all_orders(db=db, user_id=user_id, limit=limit, offset=offset)
 
 
 def get_order_by_state(db: Session, state: str, limit: int = 100, offset: int = 0) -> List[OrderResponse]:
-    orders = (
-        db.query(DOrder)
-        .filter(DOrder.state_order == state, DOrder.deleted == False)  # noqa: E712
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-    return [OrderResponse(name=str(o.id)) for o in orders]
+    return get_all_orders(db=db, state=state, limit=limit, offset=offset)
