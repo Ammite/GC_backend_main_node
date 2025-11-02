@@ -109,8 +109,8 @@ def get_analytics(
     previous_orders = previous_query.all()
     
     # Считаем метрики
-    current_revenue = sum(float(order.sum_order or 0) for order in orders)
-    previous_revenue = sum(float(order.sum_order or 0) for order in previous_orders)
+    current_revenue = sum(float(order.discount or 0) for order in orders)
+    previous_revenue = sum(float(order.discount or 0) for order in previous_orders)
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)
@@ -153,7 +153,7 @@ def get_analytics(
     ]
     
     # Метрики заказов
-    returns_sum = sum(float(order.sum_order or 0) for order in orders if order.state_order == "cancelled")
+    returns_sum = sum(float(order.discount or 0) for order in orders if order.state_order == "cancelled")
     
     order_metrics = [
         OrderMetric(
@@ -192,9 +192,12 @@ def get_analytics(
     ]
     
     # Топ сотрудников по выручке
+    # TODO: ИСПРАВИТЬ! Сейчас считается по User.id и DOrder.user_id, 
+    # но нужно использовать employee_id вместо user_id.
+    # Нужно проверить какие поля правильные для связи с сотрудниками.
     employee_stats = db.query(
         User.id,
-        func.sum(DOrder.sum_order).label("total_amount")
+        func.sum(DOrder.discount).label("total_amount")
     ).join(
         DOrder, DOrder.user_id == User.id
     ).filter(
@@ -209,7 +212,7 @@ def get_analytics(
         employee_stats = employee_stats.filter(DOrder.organization_id == organization_id)
     
     employee_stats = employee_stats.group_by(User.id).order_by(
-        func.sum(DOrder.sum_order).desc()
+        func.sum(DOrder.discount).desc()
     ).limit(10).all()
     
     employees_analytics = []
