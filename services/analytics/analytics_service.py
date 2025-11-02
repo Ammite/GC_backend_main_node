@@ -6,6 +6,8 @@ from models.d_order import DOrder
 from models.sales import Sales
 from models.employees import Employees
 from models.user import User
+from models.account import Account
+from models.transaction import Transaction
 from schemas.analytics import (
     AnalyticsResponse,
     ExpensesAnalyticsResponse,
@@ -299,4 +301,82 @@ def get_expenses_analytics(
 
     Нужно получить id у типов EXPENSES и EQUITY и EMPLOYEES_LIABILITY и DEBTS_OF_EMPLOYEES.
     """
-    pass
+    # Парсим дату
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%d.%m.%Y")
+        except ValueError:
+            target_date = datetime.now()
+    else:
+        target_date = datetime.now()
+    
+    # Определяем период
+    if period == "week":
+        start_date = target_date - timedelta(days=7)
+    elif period == "month":
+        start_date = target_date - timedelta(days=30)
+    else:  # day
+        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    # Шаг 1: Получаем аккаунты с нужными типами
+    expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY', 'DEBTS_OF_EMPLOYEES']
+    
+    accounts = db.query(Account).filter(
+        Account.type.in_(expense_types),
+        Account.deleted == False
+    ).all()
+    
+    # Шаг 2: Извлекаем iiko_id из аккаунтов
+    account_iiko_ids = [account.iiko_id for account in accounts]
+    
+    # Шаг 3: Получаем транзакции по этим account_id
+    transactions_query = db.query(Transaction).filter(
+        Transaction.account_id.in_(account_iiko_ids),
+        Transaction.date_time >= start_date,
+        Transaction.date_time <= end_date,
+        Transaction.is_active == True
+    )
+    
+    # Фильтруем по организации если указана
+    if organization_id:
+        transactions_query = transactions_query.filter(
+            Transaction.organization_id == organization_id
+        )
+    
+    transactions = transactions_query.all()
+    
+    # Считаем общую сумму расходов
+    total_expenses = sum(
+        float(transaction.sum_outgoing or 0) 
+        for transaction in transactions
+    )
+    
+    # Группируем расходы по типу счета
+    expenses_by_type = {}
+    for transaction in transactions:
+        account_type = transaction.account_type or 'Неизвестно'
+        if account_type not in expenses_by_type:
+            expenses_by_type[account_type] = 0
+        expenses_by_type[account_type] += float(transaction.sum_outgoing or 0)
+    
+    # Группируем расходы по названию счета
+    expenses_by_account = {}
+    for transaction in transactions:
+        account_name = transaction.account_name or 'Неизвестно'
+        if account_name not in expenses_by_account:
+            expenses_by_account[account_name] = 0
+        expenses_by_account[account_name] += float(transaction.sum_outgoing or 0)
+    
+    return {
+        "total_expenses": total_expenses,
+        "total_transactions": len(transactions),
+        "expenses_by_type": expenses_by_type,
+        "expenses_by_account": expenses_by_account,
+        "transactions": transactions,
+        "period": {
+            "start": start_date.strftime("%d.%m.%Y %H:%M"),
+            "end": end_date.strftime("%d.%m.%Y %H:%M")
+        }
+    }
