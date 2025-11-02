@@ -5,7 +5,9 @@ from models.organization import Organization
 from models.sales import Sales
 from models.restaurant_sections import RestaurantSection
 from schemas.orders import OrderResponse, OrderItemResponse
+import logging
 
+logger = logging.getLogger(__name__)
 
 def get_all_orders(
     db: Session,
@@ -30,12 +32,13 @@ def get_all_orders(
     result = []
     for order in orders:
         # Получаем organization_name
-        organization_name = order.organization.name if order.organization else None
+        organization = db.query(Organization).filter(Organization.id == order.organization_id).first()
+        organization_name = organization.name if organization else None
         
         # Получаем sales items по iiko_id заказа
         sales_items = db.query(Sales).filter(
             Sales.order_id == order.iiko_id,
-            Sales.delivery_is_delivery == 'ORDER_WITHOUT_DELIVERY',
+            # Sales.delivery_is_delivery == 'ORDER_WITHOUT_DELIVERY',
             Sales.deleted_with_writeoff == 'NOT_DELETED',
             Sales.dish_discount_sum_int > 0
         ).all()
@@ -44,6 +47,7 @@ def get_all_orders(
         items = []
         table_num = None
         room_name = None
+        organization_code = None
         
         for sale in sales_items:
             # Получаем room name по restaurant_section_id
@@ -57,6 +61,8 @@ def get_all_orders(
             # Берем table_num из первого sale
             if sale.table_num and not table_num:
                 table_num = sale.table_num
+
+            organization_code = sale.department_code if organization_code is None and sale.department_code else None
             
             items.append(OrderItemResponse(
                 open_time=sale.open_time,
@@ -72,14 +78,25 @@ def get_all_orders(
                 product_cost_base_product_cost=float(sale.product_cost_base_product_cost) if sale.product_cost_base_product_cost else None,
             ))
         
+        if organization_name is None and organization_code is not None:
+            organization = db.query(Organization).filter(Organization.code == organization_code).first()
+            if organization:
+                organization_name = organization.name
+
+        
+        if not sales_items:
+            room_name = "Доставка"
+        
         result.append(OrderResponse(
             id=order.id,
             organization_name=organization_name,
             table=table_num,
             room=room_name,
             status=order.state_order,
-            items=items,
+            sum_order=float(order.sum_order) if order.sum_order else None,
+            final_sum=float(order.discount) if order.discount else None,
             bank_commission=float(order.bank_commission) if order.bank_commission else None,
+            items=items
         ))
     
     return result

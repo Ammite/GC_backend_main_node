@@ -3,10 +3,12 @@ from sqlalchemy import func, and_
 from typing import Optional
 from datetime import datetime, timedelta
 from models.d_order import DOrder
+from models.sales import Sales
 from models.employees import Employees
 from models.user import User
 from schemas.analytics import (
     AnalyticsResponse,
+    ExpensesAnalyticsResponse,
     Metric,
     Report,
     OrderMetric,
@@ -153,7 +155,39 @@ def get_analytics(
     ]
     
     # Метрики заказов
-    returns_sum = sum(float(order.discount or 0) for order in orders if order.state_order == "cancelled")
+    '''
+    Нужно брать sales, и фильтровать по deleted_with_writeoff = 'DELETED_WITHOUT_WRITEOFF'
+    Потом чтобы было cashier != 'Удаление позиций'
+    И order_deleted != 'DELETED'
+
+    И суммируем по dish_sum_int
+    '''
+
+    sales_query = db.query(Sales).filter(
+        Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF',
+        Sales.cashier != 'Удаление позиций',
+        Sales.order_deleted != 'DELETED',
+        Sales.open_time >= start_date,
+        Sales.open_time <= end_date,
+    )
+    if organization_id:
+        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+    
+    sales = sales_query.all()
+    returns_sum = sum(float(sale.dish_sum_int or 0) for sale in sales)
+
+    
+    sales_for_cost_of_goods = db.query(Sales).filter(
+        Sales.cashier != 'Удаление позиций',
+        Sales.order_deleted != 'DELETED',
+        Sales.open_time >= start_date,
+        Sales.open_time <= end_date,
+    )
+    if organization_id:
+        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+    
+    sales_for_cost_of_goods = sales_for_cost_of_goods.all()
+    cost_of_goods = sum(float(sale.product_cost_base_product_cost or 0) for sale in sales_for_cost_of_goods)
     
     order_metrics = [
         OrderMetric(
@@ -164,14 +198,12 @@ def get_analytics(
         OrderMetric(
             id=2,
             label="Сумма возвратов",
-            value=f"-{format_currency(returns_sum)}",
+            value=f"{format_currency(returns_sum)}",
             type="negative" if returns_sum > 0 else None
         )
     ]
     
     # Финансовые метрики
-    # TODO: Добавить реальные данные о себестоимости
-    cost_of_goods = current_revenue * 0.3  # Примерно 30% от выручки
     
     financial_metrics = [
         FinancialMetric(
@@ -187,50 +219,47 @@ def get_analytics(
         InventoryMetric(
             id=1,
             label="Сумма товаров на начало периода",
-            value=format_currency(cost_of_goods * 2)
+            value=format_currency(0)
         )
     ]
     
     # Топ сотрудников по выручке
-    # TODO: ИСПРАВИТЬ! Сейчас считается по User.id и DOrder.user_id, 
-    # но нужно использовать employee_id вместо user_id.
-    # Нужно проверить какие поля правильные для связи с сотрудниками.
+    # Считаем по таблице Sales, группируем по order_waiter_id (официант)
     employee_stats = db.query(
-        User.id,
-        func.sum(DOrder.discount).label("total_amount")
+        Employees.name.label("waiter_name"),
+        Employees.iiko_id.label("waiter_id"),
+        Employees.id.label("employee_id"),
+        func.sum(Sales.dish_discount_sum_int).label("total_revenue")
     ).join(
-        DOrder, DOrder.user_id == User.id
+        Employees, Sales.order_waiter_id == Employees.iiko_id
     ).filter(
         and_(
-            DOrder.time_order >= start_date,
-            DOrder.time_order <= end_date,
-            DOrder.deleted == False
+            Sales.open_time >= start_date,
+            Sales.open_time <= end_date,
+            Sales.cashier != 'Удаление позиций',
+            Sales.order_deleted != 'DELETED'
         )
     )
     
     if organization_id:
-        employee_stats = employee_stats.filter(DOrder.organization_id == organization_id)
+        employee_stats = employee_stats.filter(Sales.organization_id == organization_id)
     
-    employee_stats = employee_stats.group_by(User.id).order_by(
-        func.sum(DOrder.discount).desc()
+    employee_stats = employee_stats.group_by(
+        Employees.name, 
+        Employees.iiko_id,
+        Employees.id
+    ).order_by(
+        func.sum(Sales.dish_discount_sum_int).desc()
     ).limit(10).all()
     
     employees_analytics = []
-    for idx, (user_id, total_amount) in enumerate(employee_stats, start=1):
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            continue
-        
-        employee = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
-        if not employee:
-            continue
-        
+    for idx, (waiter_name, waiter_id, employee_id, total_revenue) in enumerate(employee_stats, start=1):
         employees_analytics.append(
             EmployeeAnalytic(
-                id=idx,
-                name=employee.name or "Неизвестно",
-                amount=format_currency(float(total_amount or 0)),
-                avatar="https://api.builder.io/api/v1/image/assets/TEMP/3a1a0f795dd6cebc375ac2f7fbeab6a0d791efc8?width=80"
+                id=employee_id,
+                name=waiter_name or "Неизвестно",
+                amount=format_currency(float(total_revenue or 0)),
+                avatar="https://static.vecteezy.com/system/resources/previews/031/090/019/non_2x/cat-icon-in-flat-trendy-style-isolated-on-transparent-background-cat-silhouette-sign-symbol-mobile-concept-and-web-design-house-animals-symbol-logo-graphics-vector.jpg"
             )
         )
     
@@ -243,3 +272,31 @@ def get_analytics(
         employees=employees_analytics
     )
 
+
+
+def get_expenses_analytics(
+    db: Session,
+    date: Optional[str] = None,
+    period: Optional[str] = "day",
+    organization_id: Optional[int] = None,
+) -> ExpensesAnalyticsResponse:
+    """
+    Получить аналитику расходов
+    Типы которые есть в таблице transactions
+    "EMPLOYEES_LIABILITY"
+    "EQUITY"
+    "CLIENTS_LIABILITY"
+    "OTHER_INCOME"
+    "INVENTORY_ASSETS"
+    "OTHER_CURRENT_LIABILITY"
+    "DEBTS_OF_EMPLOYEES"
+    "OTHER_CURRENT_ASSET"
+    "COST_OF_GOODS_SOLD"
+    "CASH"
+    "INCOME"
+    "EXPENSES"
+    "ACCOUNTS_PAYABLE"
+
+    Нужно получить id у типов EXPENSES и EQUITY и EMPLOYEES_LIABILITY и DEBTS_OF_EMPLOYEES.
+    """
+    pass

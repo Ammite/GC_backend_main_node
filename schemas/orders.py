@@ -23,8 +23,10 @@ class OrderResponse(BaseModel):
     table: Optional[int]
     room: Optional[str]
     status: Optional[str]
-    items: List[OrderItemResponse]
+    sum_order: Optional[float]
+    final_sum: Optional[float]
     bank_commission: Optional[float]
+    items: List[OrderItemResponse]
 
 
 class OrderArrayResponse(BaseModel):

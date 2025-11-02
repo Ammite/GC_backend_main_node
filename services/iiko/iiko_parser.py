@@ -3,6 +3,7 @@
 Содержит функции для обработки и нормализации данных, полученных от iiko API
 """
 
+import json
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -229,17 +230,13 @@ class IikoParser:
         
         parsed_items = []
         for item in data:
-            # Получаем цветовые данные
-            color = item.get("color", {})
-            font_color = item.get("fontColor", {})
-            
             parsed_item = {
                 "iiko_id": item.get("id"),
                 "name": item.get("name"),
                 "description": item.get("description", ""),
                 "code": item.get("code"),
                 "num": item.get("num"),
-                "price": item.get("defaultSalePrice", 0),
+                "price": item.get("defaultSalePrice", 0) if item.get("defaultSalePrice") else 0,
                 "deleted": item.get("deleted", False),
                 "organization_id": None,  # Server API не привязан к организации
                 "data_source": "server",
@@ -250,16 +247,9 @@ class IikoParser:
                 "tax_category": item.get("taxCategory"),
                 "category_server": item.get("category"),
                 "accounting_category": item.get("accountingCategory"),
-                "color_red": color.get("red"),
-                "color_green": color.get("green"),
-                "color_blue": color.get("blue"),
-                "font_color_red": font_color.get("red"),
-                "font_color_green": font_color.get("green"),
-                "font_color_blue": font_color.get("blue"),
                 "front_image_id": item.get("frontImageId"),
                 "position_server": item.get("position"),
                 "main_unit": item.get("mainUnit"),
-                "excluded_sections": item.get("excludedSections"),
                 "default_sale_price": item.get("defaultSalePrice"),
                 "place_type": item.get("placeType"),
                 "default_included_in_menu": item.get("defaultIncludedInMenu", False),
@@ -267,11 +257,7 @@ class IikoParser:
                 "unit_weight": item.get("unitWeight"),
                 "unit_capacity": item.get("unitCapacity"),
                 "product_scale_id": item.get("productScaleId"),
-                "cold_loss_percent": item.get("coldLossPercent"),
-                "hot_loss_percent": item.get("hotLossPercent"),
-                "allergen_groups": item.get("allergenGroups"),
-                "estimated_purchase_price": item.get("estimatedPurchasePrice"),
-                "not_in_store_movement": item.get("notInStoreMovement", False),
+                "modifier_schema_id": item.get("modifierSchemaId"),
                 
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
@@ -289,15 +275,42 @@ class IikoParser:
         
         parsed_groups = []
         for group in data:
+            # Получаем position - может быть числом или None
+            position = group.get("position")
+            if isinstance(position, (int, float)):
+                position = str(int(position))
+            elif position is None:
+                position = None
+            else:
+                position = str(position) if position else None
+            
+            # Обрабатываем visibility_filter - может быть dict или None
+            visibility_filter = group.get("visibilityFilter")
+            if isinstance(visibility_filter, dict):
+                # Конвертируем dict в JSON строку
+                visibility_filter = json.dumps(visibility_filter, ensure_ascii=False)
+            elif visibility_filter is None:
+                visibility_filter = None
+            else:
+                visibility_filter = str(visibility_filter)
+            
             parsed_group = {
                 "iiko_id": group.get("id"),
                 "name": group.get("name"),
                 "description": group.get("description", ""),
-                "is_active": not group.get("isDeleted", False),
-                "sort_order": group.get("sortOrder", 0),
+                "num": group.get("num"),
+                "code": group.get("code"),
+                "deleted": group.get("deleted", False),
+                "parent_iiko_id": group.get("parent"),  # ID родительской группы
+                "accounting_category_id": group.get("accountingCategory"),
+                "front_image_id": group.get("frontImageId"),
+                "position": position,
+                "modifier_schema_id": group.get("modifierSchemaId"),
+                "visibility_filter": visibility_filter,
                 "created_at": datetime.now(),
                 "updated_at": datetime.now()
             }
+            # НЕ сохраняем поле "modifiers" - это массив объектов, его нельзя сохранить напрямую
             parsed_groups.append(parsed_group)
         
         logger.info(f"Парсинг групп продуктов: {len(parsed_groups)} записей")
@@ -305,7 +318,7 @@ class IikoParser:
 
     @staticmethod
     def parse_product_categories(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
-        """Парсинг категорий продуктов (Server API)"""
+        """Парсинг категорий продуктов (Server API) - для MenuCategory"""
         if not data:
             return []
         
@@ -314,12 +327,64 @@ class IikoParser:
             parsed_category = {
                 "iiko_id": category.get("id"),
                 "name": category.get("name"),
-                "parent_id": category.get("parentId")  # Нужно будет получить из других категорий
+                "is_deleted": category.get("deleted", False),
+                "created_at": datetime.now(),
+                "updated_at": datetime.now()
             }
             parsed_categories.append(parsed_category)
         
         logger.info(f"Парсинг категорий продуктов: {len(parsed_categories)} записей")
         return parsed_categories
+    
+    @staticmethod
+    def parse_item_modifiers(modifiers_data: List[Dict[Any, Any]], item_iiko_id: str) -> List[Dict[Any, Any]]:
+        """Парсинг модификаторов товара из Server API
+        
+        Args:
+            modifiers_data: массив модификаторов из поля modifiers товара
+            item_iiko_id: iiko_id товара, к которому относятся модификаторы
+        
+        Returns:
+            Список словарей с данными модификаторов
+        """
+        if not modifiers_data:
+            return []
+        
+        parsed_modifiers = []
+        
+        def parse_modifier_recursive(mod_data: Dict[Any, Any], parent_modifier_iiko_id: Optional[str] = None):
+            """Рекурсивно парсит модификатор и его дочерние модификаторы"""
+            modifier_iiko_id = mod_data.get("modifier")
+            if not modifier_iiko_id:
+                return
+            
+            parsed_modifier = {
+                "iiko_id": modifier_iiko_id,
+                "item_iiko_id": item_iiko_id,  # К какому товару относится
+                "parent_modifier_iiko_id": parent_modifier_iiko_id,  # Родительский модификатор
+                "deleted": mod_data.get("deleted", False),
+                "default_amount": mod_data.get("defaultAmount", 0),
+                "free_of_charge_amount": mod_data.get("freeOfChargeAmount", 0),
+                "minimum_amount": mod_data.get("minimumAmount", 0),
+                "maximum_amount": mod_data.get("maximumAmount", 0),
+                "hide_if_default_amount": mod_data.get("hideIfDefaultAmount", False),
+                "child_modifiers_have_min_max_restrictions": mod_data.get("childModifiersHaveMinMaxRestrictions", False),
+                "splittable": mod_data.get("splittable", False),
+            }
+            parsed_modifiers.append(parsed_modifier)
+            
+            # Рекурсивно обрабатываем дочерние модификаторы
+            child_modifiers = mod_data.get("childModifiers")
+            if child_modifiers:
+                for child_mod in child_modifiers:
+                    parse_modifier_recursive(child_mod, modifier_iiko_id)
+        
+        # Парсим все модификаторы верхнего уровня
+        for modifier in modifiers_data:
+            parse_modifier_recursive(modifier)
+        
+        logger.debug(f"Парсинг модификаторов товара {item_iiko_id}: {len(parsed_modifiers)} записей")
+        return parsed_modifiers
 
     @staticmethod
     def parse_employees(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
@@ -1183,6 +1248,70 @@ class IikoParser:
         
         logger.info(f"Парсинг продаж: {len(parsed_sales)} записей")
         return parsed_sales
+
+    @staticmethod
+    def parse_accounts(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг счетов (accounts) из Server API"""
+        if not data:
+            return []
+        
+        # Проверяем, что data это список
+        if not isinstance(data, list):
+            logger.error(f"Ожидался список в parse_accounts, получен тип: {type(data)}")
+            return []
+        
+        parsed_accounts = []
+        for account in data:
+            # Проверяем, что account это словарь
+            if not isinstance(account, dict):
+                logger.warning(f"Счет должен быть словарем в parse_accounts, получен тип: {type(account)}, пропускаем")
+                continue
+            
+            parsed_account = {
+                "iiko_id": account.get("id"),
+                "root_type": account.get("rootType"),
+                "account_parent_id": account.get("accountParentId"),
+                "parent_corporate_id": account.get("parentCorporateId"),
+                "type": account.get("type"),
+                "system": account.get("system"),
+                "custom_transactions_allowed": account.get("customTransactionsAllowed"),
+                "deleted": account.get("deleted", False),
+                "code": account.get("code", ""),
+                "name": account.get("name", "")
+            }
+            parsed_accounts.append(parsed_account)
+        
+        logger.info(f"Парсинг счетов: {len(parsed_accounts)} записей")
+        return parsed_accounts
+
+    @staticmethod
+    def parse_salaries(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг окладов сотрудников из Server API"""
+        if not data:
+            return []
+        
+        # Проверяем, что data это список
+        if not isinstance(data, list):
+            logger.error(f"Ожидался список в parse_salaries, получен тип: {type(data)}")
+            return []
+        
+        parsed_salaries = []
+        for salary in data:
+            # Проверяем, что salary это словарь
+            if not isinstance(salary, dict):
+                logger.warning(f"Оклад должен быть словарем в parse_salaries, получен тип: {type(salary)}, пропускаем")
+                continue
+            
+            parsed_salary = {
+                "employee_iiko_id": salary.get("employeeId"),  # ID сотрудника из iiko
+                "date_from": salary.get("dateFrom"),
+                "date_to": salary.get("dateTo"),
+                "salary": salary.get("payment")
+            }
+            parsed_salaries.append(parsed_salary)
+        
+        logger.info(f"Парсинг окладов: {len(parsed_salaries)} записей")
+        return parsed_salaries
 
 
 # Глобальный экземпляр парсера

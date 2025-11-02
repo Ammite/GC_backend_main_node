@@ -14,9 +14,9 @@ from .iiko_service import iiko_service
 from .iiko_parser import iiko_parser
 from database.database import get_db
 from models import (
-    Organization, Category, Item, Modifier, Employees, 
-    Roles, Shift, Table, Terminal, ProductGroup,
-    AttendanceType, RestaurantSection, TerminalGroup, Transaction, Sales
+    Organization, Category, Item, Modifier, ItemModifier, Employees, 
+    Roles, Shift, Table, Terminal, ProductGroup, MenuCategory,
+    AttendanceType, RestaurantSection, TerminalGroup, Transaction, Sales, Account, UserSalary
 )
 
 logger = logging.getLogger(__name__)
@@ -82,31 +82,49 @@ class IikoSync:
             return {"created": 0, "updated": 0, "errors": 1}
     
     async def sync_menu(self, db: Session, organization_id: Optional[str] = None) -> Dict[str, int]:
-        """Синхронизация меню"""
+        """Синхронизация меню только из Server API
+        Синхронизирует:
+        1. Категории продуктов (MenuCategory)
+        2. Группы товаров (ProductGroup)
+        3. Товары (Item)
+        4. Модификаторы товаров (Modifier)
+        """
         try:
-            # Получаем данные меню
-            menu_data = await self.service.get_menu(organization_id)
+            logger.info("Запуск синхронизации меню из Server API")
             
-            if not menu_data:
-                logger.warning("Не удалось получить данные меню")
-                return {"categories": 0, "items": 0, "modifiers": 0, "errors": 0}
+            # 1. Синхронизируем категории продуктов
+            menu_categories_result = await self.sync_menu_categories(db)
             
-            # Парсим данные
-            parsed_data = self.parser.parse_menu_nomenclature(menu_data)
+            # 2. Синхронизируем группы товаров
+            product_groups_result = await self.sync_product_groups(db)
             
-            categories_result = await self._sync_categories(db, parsed_data["categories"])
-            items_result = await self._sync_items(db, parsed_data["items"])
-            modifiers_result = await self._sync_modifiers(db, parsed_data["modifiers"])
+            # 3. Синхронизируем товары из Server API
+            items_result = await self.sync_items_server(db)
             
-            total_created = categories_result["created"] + items_result["created"] + modifiers_result["created"]
-            total_updated = categories_result["updated"] + items_result["updated"] + modifiers_result["updated"]
-            total_errors = categories_result["errors"] + items_result["errors"] + modifiers_result["errors"]
+            # 4. Синхронизируем модификаторы (они парсятся вместе с товарами)
+            # Модификаторы уже синхронизированы в sync_items_server
+            
+            total_created = (
+                menu_categories_result.get("created", 0) + 
+                product_groups_result.get("created", 0) + 
+                items_result.get("created", 0)
+            )
+            total_updated = (
+                menu_categories_result.get("updated", 0) + 
+                product_groups_result.get("updated", 0) + 
+                items_result.get("updated", 0)
+            )
+            total_errors = (
+                menu_categories_result.get("errors", 0) + 
+                product_groups_result.get("errors", 0) + 
+                items_result.get("errors", 0)
+            )
             
             logger.info(f"Синхронизация меню завершена: создано {total_created}, обновлено {total_updated}, ошибок {total_errors}")
             return {
-                "categories": categories_result,
+                "menu_categories": menu_categories_result,
+                "product_groups": product_groups_result,
                 "items": items_result,
-                "modifiers": modifiers_result,
                 "total_created": total_created,
                 "total_updated": total_updated,
                 "total_errors": total_errors
@@ -115,7 +133,7 @@ class IikoSync:
         except Exception as e:
             logger.error(f"Ошибка синхронизации меню: {e}")
             db.rollback()
-            return {"categories": 0, "items": 0, "modifiers": 0, "errors": 1}
+            return {"menu_categories": 0, "product_groups": 0, "items": 0, "errors": 1}
     
     async def _sync_categories(self, db: Session, categories_data: List[Dict[Any, Any]]) -> Dict[str, int]:
         """Синхронизация категорий"""
@@ -253,7 +271,7 @@ class IikoSync:
             return {"created": 0, "updated": 0, "errors": 1}
 
     async def sync_items_server(self, db: Session) -> Dict[str, int]:
-        """Синхронизация товаров из Server API"""
+        """Синхронизация товаров и их модификаторов из Server API"""
         try:
             logger.info("Запуск синхронизации товаров Server API")
             
@@ -261,7 +279,7 @@ class IikoSync:
             server_data = await self.service.get_server_menu()
             if not server_data:
                 logger.warning("Нет данных Server API")
-                return {"created": 0, "updated": 0, "errors": 0}
+                return {"created": 0, "updated": 0, "errors": 0, "modifiers_created": 0}
             
             # Парсим данные
             parsed_items = self.parser.parse_items_server(server_data)
@@ -269,12 +287,33 @@ class IikoSync:
             created = 0
             updated = 0
             errors = 0
+            modifiers_created = 0
             
             for item_data in parsed_items:
                 try:
+                    item_iiko_id = item_data["iiko_id"]
+                    
+                    # Связываем с категорией по category_server (iiko_id категории)
+                    category_iiko_id = item_data.get("category_server")
+                    if category_iiko_id:
+                        menu_category = db.query(MenuCategory).filter(
+                            MenuCategory.iiko_id == category_iiko_id
+                        ).first()
+                        if menu_category:
+                            item_data["menu_category_id"] = menu_category.id
+                    
+                    # Связываем с группой товаров по parent (iiko_id группы)
+                    parent_iiko_id = item_data.get("parent")
+                    if parent_iiko_id:
+                        product_group = db.query(ProductGroup).filter(
+                            ProductGroup.iiko_id == parent_iiko_id
+                        ).first()
+                        if product_group:
+                            item_data["product_group_id"] = product_group.id
+                    
                     # Ищем существующий товар по iiko_id
                     existing_item = db.query(Item).filter(
-                        Item.iiko_id == item_data["iiko_id"]
+                        Item.iiko_id == item_iiko_id
                     ).first()
                     
                     if existing_item:
@@ -293,20 +332,226 @@ class IikoSync:
                         # Создаем новый товар
                         new_item = Item(**item_data)
                         db.add(new_item)
+                        db.flush()  # Чтобы получить ID товара для модификаторов
+                        existing_item = new_item
                         created += 1
+                    
+                    # Синхронизируем модификаторы товара, если они есть
+                    # Получаем исходные данные товара из server_data
+                    original_item = next((item for item in server_data if item.get("id") == item_iiko_id), None)
+                    if original_item and original_item.get("modifiers"):
+                        modifiers_data = original_item.get("modifiers", [])
+                        parsed_modifiers = self.parser.parse_item_modifiers(modifiers_data, item_iiko_id)
+                        
+                        # Удаляем старые связи товар-модификатор
+                        db.query(ItemModifier).filter(ItemModifier.item_id == existing_item.id).delete()
+                        
+                        # Создаем/обновляем модификаторы и связи
+                        for mod_data in parsed_modifiers:
+                            modifier_iiko_id = mod_data["iiko_id"]
+                            
+                            # Ищем или создаем сам модификатор
+                            modifier = db.query(Modifier).filter(
+                                Modifier.iiko_id == modifier_iiko_id
+                            ).first()
+                            
+                            if not modifier:
+                                # Создаем новый модификатор
+                                modifier = Modifier(
+                                    iiko_id=modifier_iiko_id,
+                                    deleted=False
+                                )
+                                db.add(modifier)
+                                db.flush()  # Чтобы получить ID
+                            
+                            # Создаем связь товар-модификатор с параметрами
+                            item_modifier = ItemModifier(
+                                item_id=existing_item.id,
+                                modifier_id=modifier.id,
+                                parent_modifier_iiko_id=mod_data.get("parent_modifier_iiko_id"),
+                                deleted=mod_data.get("deleted", False),
+                                default_amount=mod_data.get("default_amount", 0),
+                                free_of_charge_amount=mod_data.get("free_of_charge_amount", 0),
+                                minimum_amount=mod_data.get("minimum_amount", 0),
+                                maximum_amount=mod_data.get("maximum_amount", 0),
+                                hide_if_default_amount=mod_data.get("hide_if_default_amount", False),
+                                child_modifiers_have_min_max_restrictions=mod_data.get("child_modifiers_have_min_max_restrictions", False),
+                                splittable=mod_data.get("splittable", False)
+                            )
+                            db.add(item_modifier)
+                            modifiers_created += 1
                         
                 except Exception as e:
                     logger.error(f"Ошибка синхронизации товара Server {item_data.get('name')}: {e}")
+                    db.rollback()
                     errors += 1
             
+            # После синхронизации всех товаров и модификаторов, связываем parent_id модификаторов
+            await self._link_modifier_parents(db)
+            
             db.commit()
-            logger.info(f"Синхронизация товаров Server API завершена: создано {created}, обновлено {updated}, ошибок {errors}")
-            return {"created": created, "updated": updated, "errors": errors}
+            logger.info(f"Синхронизация товаров Server API завершена: создано {created}, обновлено {updated}, модификаторов создано {modifiers_created}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors, "modifiers_created": modifiers_created}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации товаров Server API: {e}")
             db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1, "modifiers_created": 0}
+    
+    async def _link_modifier_parents(self, db: Session):
+        """Связывает ItemModifier с их родителями по parent_modifier_iiko_id"""
+        try:
+            # Получаем все связи товар-модификатор с parent_modifier_iiko_id
+            item_modifiers_with_parents = db.query(ItemModifier).filter(
+                ItemModifier.parent_modifier_iiko_id.isnot(None)
+            ).all()
+            
+            for item_modifier in item_modifiers_with_parents:
+                # Находим родительскую связь в рамках того же товара
+                # Сначала находим модификатор с нужным iiko_id
+                parent_modifier = db.query(Modifier).filter(
+                    Modifier.iiko_id == item_modifier.parent_modifier_iiko_id
+                ).first()
+                
+                if parent_modifier:
+                    # Находим связь этого модификатора с тем же товаром
+                    parent_item_modifier = db.query(ItemModifier).filter(
+                        ItemModifier.item_id == item_modifier.item_id,
+                        ItemModifier.modifier_id == parent_modifier.id
+                    ).first()
+                    
+                    if parent_item_modifier:
+                        item_modifier.parent_item_modifier_id = parent_item_modifier.id
+            
+            logger.info(f"Связано {len(item_modifiers_with_parents)} связей товар-модификатор с родителями")
+        except Exception as e:
+            logger.error(f"Ошибка связывания связей товар-модификатор с родителями: {e}")
+    
+    async def sync_menu_categories(self, db: Session) -> Dict[str, int]:
+        """Синхронизация категорий продуктов из Server API"""
+        try:
+            logger.info("Запуск синхронизации категорий продуктов")
+            
+            # Получаем данные из Server API
+            categories_data = await self.service.get_server_product_categories()
+            if not categories_data:
+                logger.warning("Нет данных категорий продуктов")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            # Парсим данные
+            parsed_categories = self.parser.parse_product_categories(categories_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for cat_data in parsed_categories:
+                try:
+                    # Ищем существующую категорию по iiko_id
+                    existing_cat = db.query(MenuCategory).filter(
+                        MenuCategory.iiko_id == cat_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_cat:
+                        # Обновляем существующую категорию
+                        for key, value in cat_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_cat, key, value)
+                        existing_cat.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        # Создаем новую категорию
+                        new_cat = MenuCategory(**cat_data)
+                        db.add(new_cat)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации категории {cat_data.get('name')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация категорий продуктов завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации категорий продуктов: {e}")
+            db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
+    
+    async def sync_product_groups(self, db: Session) -> Dict[str, int]:
+        """Синхронизация групп товаров из Server API"""
+        try:
+            logger.info("Запуск синхронизации групп товаров")
+            
+            # Получаем данные из Server API
+            groups_data = await self.service.get_server_product_groups()
+            if not groups_data:
+                logger.warning("Нет данных групп товаров")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            # Парсим данные
+            parsed_groups = self.parser.parse_product_groups(groups_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for group_data in parsed_groups:
+                try:
+                    # Ищем существующую группу по iiko_id
+                    existing_group = db.query(ProductGroup).filter(
+                        ProductGroup.iiko_id == group_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_group:
+                        # Обновляем существующую группу
+                        for key, value in group_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_group, key, value)
+                        existing_group.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        # Создаем новую группу
+                        new_group = ProductGroup(**group_data)
+                        db.add(new_group)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации группы товаров {group_data.get('name')}: {e}")
+                    errors += 1
+            
+            # После создания всех групп, связываем parent_id
+            await self._link_product_group_parents(db)
+            
+            db.commit()
+            logger.info(f"Синхронизация групп товаров завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации групп товаров: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+    
+    async def _link_product_group_parents(self, db: Session):
+        """Связывает группы товаров с их родителями по parent_iiko_id"""
+        try:
+            # Получаем все группы с parent_iiko_id
+            groups_with_parents = db.query(ProductGroup).filter(
+                ProductGroup.parent_iiko_id.isnot(None)
+            ).all()
+            
+            for group in groups_with_parents:
+                # Находим родительскую группу по iiko_id
+                parent_group = db.query(ProductGroup).filter(
+                    ProductGroup.iiko_id == group.parent_iiko_id
+                ).first()
+                
+                if parent_group:
+                    group.parent_id = parent_group.id
+            
+            logger.info(f"Связано {len(groups_with_parents)} групп товаров с родителями")
+        except Exception as e:
+            logger.error(f"Ошибка связывания групп товаров с родителями: {e}")
     
     async def _sync_modifiers(self, db: Session, modifiers_data: List[Dict[Any, Any]]) -> Dict[str, int]:
         """Синхронизация модификаторов"""
@@ -928,6 +1173,134 @@ class IikoSync:
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации продаж: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
+    async def sync_accounts(self, db: Session) -> Dict[str, int]:
+        """Синхронизация счетов (accounts) из Server API"""
+        try:
+            accounts_data = await self.service.get_accounts()
+            
+            if not accounts_data:
+                logger.warning("Не удалось получить данные счетов")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_accounts(accounts_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for account_data in parsed_data:
+                try:
+                    existing_account = db.query(Account).filter(
+                        Account.iiko_id == account_data["iiko_id"]
+                    ).first()
+                    
+                    if existing_account:
+                        # Обновляем существующий счет
+                        for key, value in account_data.items():
+                            if key not in ["created_at"]:
+                                setattr(existing_account, key, value)
+                        existing_account.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        # Создаем новый счет
+                        account_data["created_at"] = datetime.now()
+                        account_data["updated_at"] = datetime.now()
+                        new_account = Account(**account_data)
+                        db.add(new_account)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации счета {account_data.get('name')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация счетов завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации счетов: {e}")
+            db.rollback()
+            return {"created": 0, "updated": 0, "errors": 1}
+
+    async def sync_salaries(self, db: Session) -> Dict[str, int]:
+        """Синхронизация окладов сотрудников из Server API"""
+        try:
+            salaries_data = await self.service.get_salaries()
+            
+            if not salaries_data:
+                logger.warning("Не удалось получить данные окладов")
+                return {"created": 0, "updated": 0, "errors": 0}
+            
+            parsed_data = self.parser.parse_salaries(salaries_data)
+            
+            created = 0
+            updated = 0
+            errors = 0
+            
+            for salary_data in parsed_data:
+                try:
+                    # Находим сотрудника по iiko_id
+                    employee_iiko_id = salary_data.get("employee_iiko_id")
+                    employee = None
+                    if employee_iiko_id:
+                        employee = db.query(Employees).filter(
+                            Employees.iiko_id == employee_iiko_id
+                        ).first()
+                    
+                    if not employee:
+                        logger.warning(f"Не найден сотрудник с iiko_id {employee_iiko_id} для оклада")
+                        errors += 1
+                        continue
+                    
+                    # Парсим даты
+                    from datetime import datetime
+                    date_from = datetime.fromisoformat(salary_data.get("date_from").replace('Z', '+00:00')) if salary_data.get("date_from") else None
+                    date_to = datetime.fromisoformat(salary_data.get("date_to").replace('Z', '+00:00')) if salary_data.get("date_to") else None
+                    salary_amount = float(salary_data.get("salary")) if salary_data.get("salary") else 0.0
+                    
+                    if not date_from or not date_to:
+                        logger.warning(f"Некорректные даты для оклада сотрудника {employee.name}")
+                        errors += 1
+                        continue
+                    
+                    # Проверяем существует ли уже такая запись (по 4 полям)
+                    existing_salary = db.query(UserSalary).filter(
+                        UserSalary.employee_id == employee.id,
+                        UserSalary.date_from == date_from,
+                        UserSalary.date_to == date_to,
+                        UserSalary.salary == salary_amount
+                    ).first()
+                    
+                    if existing_salary:
+                        # Запись уже существует, обновляем updated_at
+                        existing_salary.updated_at = datetime.now()
+                        updated += 1
+                    else:
+                        # Создаем новую запись
+                        new_salary = UserSalary(
+                            employee_id=employee.id,
+                            salary=salary_amount,
+                            date_from=date_from,
+                            date_to=date_to,
+                            created_at=datetime.now(),
+                            updated_at=datetime.now()
+                        )
+                        db.add(new_salary)
+                        created += 1
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка синхронизации оклада для сотрудника {salary_data.get('employee_iiko_id')}: {e}")
+                    errors += 1
+            
+            db.commit()
+            logger.info(f"Синхронизация окладов завершена: создано {created}, обновлено {updated}, ошибок {errors}")
+            return {"created": created, "updated": updated, "errors": errors}
+            
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации окладов: {e}")
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
         

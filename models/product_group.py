@@ -25,7 +25,7 @@ class ProductGroup(Base):
     front_image_id = Column(String(50), nullable=True)
     position = Column(String(50), nullable=True)
     modifier_schema_id = Column(String(50), nullable=True)
-    visibility_filter = Column(String(255), nullable=True)
+    visibility_filter = Column(Text, nullable=True)  # JSON-строка, может быть длинной
     
     created_at = Column(DateTime, default=dt.now)
     updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

@@ -857,16 +857,10 @@ class IikoService:
     # Универсальные методы (пробуют оба API)
     async def get_menu(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[Dict[Any, Any]]:
         """Получение меню (пробует Cloud, затем Server)"""
-        if prefer_cloud:
-            result = await self.get_cloud_menu(organization_id)
-            if result:
-                return result
-            return await self.get_server_products()
-        else:
-            result = await self.get_server_products()
-            if result:
-                return result
-            return await self.get_cloud_menu(organization_id)
+        result = await self.get_server_products()
+        if result:
+            return result
+        return await self.get_cloud_menu(organization_id)
 
     async def get_employees(self, organization_id: Optional[str] = None, prefer_cloud: bool = True) -> Optional[List[Dict[Any, Any]]]:
         """Получение сотрудников (только Server API)"""
@@ -958,6 +952,71 @@ class IikoService:
     async def get_attendance_types(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
         """Получение типов посещаемости (только Server API)"""
         return await self.get_server_attendance_types()
+
+    async def get_server_accounts(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение счетов (Server API)"""
+        return await self._make_request(
+            IikoApiType.SERVER,
+            "/resto/api/v2/entities/accounts/list"
+        )
+
+    async def get_accounts(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение счетов (только Server API)"""
+        return await self.get_server_accounts()
+
+    async def get_server_salaries(self) -> Optional[List[Dict[Any, Any]]]:
+        """Получение окладов сотрудников (Server API) - возвращает XML"""
+        # Получаем токен
+        token = await self._get_server_token()
+        if not token:
+            logger.error("Не удалось получить токен для Server API")
+            return None
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.server_base_url}/resto/api/employees/salary"
+                params = {"key": token}
+                response = await client.get(url, params=params)
+                
+                if response.status_code == 200:
+                    # Server API возвращает XML, нужно парсить его
+                    xml_content = response.text
+                    return await self._parse_xml_salaries(xml_content)
+                else:
+                    logger.error(f"HTTP ошибка server API: {response.status_code} - {response.text}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Ошибка запроса к server API: {e}")
+            return None
+
+    async def _parse_xml_salaries(self, xml_content: str) -> Optional[List[Dict[Any, Any]]]:
+        """Парсинг XML ответа с окладами"""
+        try:
+            root = ET.fromstring(xml_content)
+            salaries = []
+            
+            for salary_elem in root.findall('salary'):
+                salary_data = {}
+                
+                # Основные поля
+                salary_data['employeeId'] = salary_elem.find('employeeId').text if salary_elem.find('employeeId') is not None else None
+                salary_data['dateFrom'] = salary_elem.find('dateFrom').text if salary_elem.find('dateFrom') is not None else None
+                salary_data['dateTo'] = salary_elem.find('dateTo').text if salary_elem.find('dateTo') is not None else None
+                salary_data['payment'] = salary_elem.find('payment').text if salary_elem.find('payment') is not None else None
+                
+                salaries.append(salary_data)
+            
+            logger.info(f"Распарсено {len(salaries)} окладов из XML")
+            return salaries
+            
+        except Exception as e:
+            logger.error(f"Ошибка парсинга XML окладов: {e}")
+            return None
+
+    async def get_salaries(self, prefer_cloud: bool = False) -> Optional[List[Dict[Any, Any]]]:
+        """Получение окладов (только Server API)"""
+        return await self.get_server_salaries()
 
     def clear_tokens(self):
         """Очистка токенов (для принудительного обновления)"""
