@@ -10,7 +10,8 @@ class Penalty(Base):
     iiko_id = Column(String(50), unique=True, nullable=True)
     penalty_sum = Column(Numeric(10, 2), nullable=False)
     description = Column(Text, nullable=True)
-    roles_id = Column(Integer, ForeignKey("users.id"))
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     
     created_at = Column(DateTime, default=dt.now)
     updated_at = Column(DateTime, default=dt.now, onupdate=dt.now)

@@ -94,4 +94,4 @@ class Item(Base):
     product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)
     product_group = relationship("ProductGroup", back_populates="items")
 
-    modifiers = relationship("Modifier", back_populates="item")
+    item_modifiers = relationship("ItemModifier", back_populates="item", cascade="all, delete-orphan")

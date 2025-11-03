@@ -3,10 +3,14 @@ from sqlalchemy import func, and_
 from typing import Optional
 from datetime import datetime, timedelta
 from models.d_order import DOrder
+from models.sales import Sales
 from models.employees import Employees
 from models.user import User
+from models.account import Account
+from models.transaction import Transaction
 from schemas.analytics import (
     AnalyticsResponse,
+    ExpensesAnalyticsResponse,
     Metric,
     Report,
     OrderMetric,
@@ -109,8 +113,8 @@ def get_analytics(
     previous_orders = previous_query.all()
     
     # Считаем метрики
-    current_revenue = sum(float(order.sum_order or 0) for order in orders)
-    previous_revenue = sum(float(order.sum_order or 0) for order in previous_orders)
+    current_revenue = sum(float(order.discount or 0) for order in orders)
+    previous_revenue = sum(float(order.discount or 0) for order in previous_orders)
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)
@@ -153,7 +157,39 @@ def get_analytics(
     ]
     
     # Метрики заказов
-    returns_sum = sum(float(order.sum_order or 0) for order in orders if order.state_order == "cancelled")
+    '''
+    Нужно брать sales, и фильтровать по deleted_with_writeoff = 'DELETED_WITHOUT_WRITEOFF'
+    Потом чтобы было cashier != 'Удаление позиций'
+    И order_deleted != 'DELETED'
+
+    И суммируем по dish_sum_int
+    '''
+
+    sales_query = db.query(Sales).filter(
+        Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF',
+        Sales.cashier != 'Удаление позиций',
+        Sales.order_deleted != 'DELETED',
+        Sales.open_time >= start_date,
+        Sales.open_time <= end_date,
+    )
+    if organization_id:
+        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+    
+    sales = sales_query.all()
+    returns_sum = sum(float(sale.dish_sum_int or 0) for sale in sales)
+
+    
+    sales_for_cost_of_goods = db.query(Sales).filter(
+        Sales.cashier != 'Удаление позиций',
+        Sales.order_deleted != 'DELETED',
+        Sales.open_time >= start_date,
+        Sales.open_time <= end_date,
+    )
+    if organization_id:
+        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+    
+    sales_for_cost_of_goods = sales_for_cost_of_goods.all()
+    cost_of_goods = sum(float(sale.product_cost_base_product_cost or 0) for sale in sales_for_cost_of_goods)
     
     order_metrics = [
         OrderMetric(
@@ -164,14 +200,12 @@ def get_analytics(
         OrderMetric(
             id=2,
             label="Сумма возвратов",
-            value=f"-{format_currency(returns_sum)}",
+            value=f"{format_currency(returns_sum)}",
             type="negative" if returns_sum > 0 else None
         )
     ]
     
     # Финансовые метрики
-    # TODO: Добавить реальные данные о себестоимости
-    cost_of_goods = current_revenue * 0.3  # Примерно 30% от выручки
     
     financial_metrics = [
         FinancialMetric(
@@ -187,47 +221,47 @@ def get_analytics(
         InventoryMetric(
             id=1,
             label="Сумма товаров на начало периода",
-            value=format_currency(cost_of_goods * 2)
+            value=format_currency(0)
         )
     ]
     
     # Топ сотрудников по выручке
+    # Считаем по таблице Sales, группируем по order_waiter_id (официант)
     employee_stats = db.query(
-        User.id,
-        func.sum(DOrder.sum_order).label("total_amount")
+        Employees.name.label("waiter_name"),
+        Employees.iiko_id.label("waiter_id"),
+        Employees.id.label("employee_id"),
+        func.sum(Sales.dish_discount_sum_int).label("total_revenue")
     ).join(
-        DOrder, DOrder.user_id == User.id
+        Employees, Sales.order_waiter_id == Employees.iiko_id
     ).filter(
         and_(
-            DOrder.time_order >= start_date,
-            DOrder.time_order <= end_date,
-            DOrder.deleted == False
+            Sales.open_time >= start_date,
+            Sales.open_time <= end_date,
+            Sales.cashier != 'Удаление позиций',
+            Sales.order_deleted != 'DELETED'
         )
     )
     
     if organization_id:
-        employee_stats = employee_stats.filter(DOrder.organization_id == organization_id)
+        employee_stats = employee_stats.filter(Sales.organization_id == organization_id)
     
-    employee_stats = employee_stats.group_by(User.id).order_by(
-        func.sum(DOrder.sum_order).desc()
+    employee_stats = employee_stats.group_by(
+        Employees.name, 
+        Employees.iiko_id,
+        Employees.id
+    ).order_by(
+        func.sum(Sales.dish_discount_sum_int).desc()
     ).limit(10).all()
     
     employees_analytics = []
-    for idx, (user_id, total_amount) in enumerate(employee_stats, start=1):
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            continue
-        
-        employee = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
-        if not employee:
-            continue
-        
+    for idx, (waiter_name, waiter_id, employee_id, total_revenue) in enumerate(employee_stats, start=1):
         employees_analytics.append(
             EmployeeAnalytic(
-                id=idx,
-                name=employee.name or "Неизвестно",
-                amount=format_currency(float(total_amount or 0)),
-                avatar="https://api.builder.io/api/v1/image/assets/TEMP/3a1a0f795dd6cebc375ac2f7fbeab6a0d791efc8?width=80"
+                id=employee_id,
+                name=waiter_name or "Неизвестно",
+                amount=format_currency(float(total_revenue or 0)),
+                avatar="https://static.vecteezy.com/system/resources/previews/031/090/019/non_2x/cat-icon-in-flat-trendy-style-isolated-on-transparent-background-cat-silhouette-sign-symbol-mobile-concept-and-web-design-house-animals-symbol-logo-graphics-vector.jpg"
             )
         )
     
@@ -240,3 +274,109 @@ def get_analytics(
         employees=employees_analytics
     )
 
+
+
+def get_expenses_analytics(
+    db: Session,
+    date: Optional[str] = None,
+    period: Optional[str] = "day",
+    organization_id: Optional[int] = None,
+) -> ExpensesAnalyticsResponse:
+    """
+    Получить аналитику расходов
+    Типы которые есть в таблице transactions
+    "EMPLOYEES_LIABILITY"
+    "EQUITY"
+    "CLIENTS_LIABILITY"
+    "OTHER_INCOME"
+    "INVENTORY_ASSETS"
+    "OTHER_CURRENT_LIABILITY"
+    "DEBTS_OF_EMPLOYEES"
+    "OTHER_CURRENT_ASSET"
+    "COST_OF_GOODS_SOLD"
+    "CASH"
+    "INCOME"
+    "EXPENSES"
+    "ACCOUNTS_PAYABLE"
+
+    Нужно получить id у типов EXPENSES и EQUITY и EMPLOYEES_LIABILITY и DEBTS_OF_EMPLOYEES.
+    """
+    # Парсим дату
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%d.%m.%Y")
+        except ValueError:
+            target_date = datetime.now()
+    else:
+        target_date = datetime.now()
+    
+    # Определяем период
+    if period == "week":
+        start_date = target_date - timedelta(days=7)
+    elif period == "month":
+        start_date = target_date - timedelta(days=30)
+    else:  # day
+        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    # Шаг 1: Получаем аккаунты с нужными типами
+    expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY', 'DEBTS_OF_EMPLOYEES']
+    
+    accounts = db.query(Account).filter(
+        Account.type.in_(expense_types),
+        Account.deleted == False
+    ).all()
+    
+    # Шаг 2: Извлекаем iiko_id из аккаунтов
+    account_iiko_ids = [account.iiko_id for account in accounts]
+    
+    # Шаг 3: Получаем транзакции по этим account_id
+    transactions_query = db.query(Transaction).filter(
+        Transaction.account_id.in_(account_iiko_ids),
+        Transaction.date_time >= start_date,
+        Transaction.date_time <= end_date,
+        Transaction.is_active == True
+    )
+    
+    # Фильтруем по организации если указана
+    if organization_id:
+        transactions_query = transactions_query.filter(
+            Transaction.organization_id == organization_id
+        )
+    
+    transactions = transactions_query.all()
+    
+    # Считаем общую сумму расходов
+    total_expenses = sum(
+        float(transaction.sum_outgoing or 0) 
+        for transaction in transactions
+    )
+    
+    # Группируем расходы по типу счета
+    expenses_by_type = {}
+    for transaction in transactions:
+        account_type = transaction.account_type or 'Неизвестно'
+        if account_type not in expenses_by_type:
+            expenses_by_type[account_type] = 0
+        expenses_by_type[account_type] += float(transaction.sum_outgoing or 0)
+    
+    # Группируем расходы по названию счета
+    expenses_by_account = {}
+    for transaction in transactions:
+        account_name = transaction.account_name or 'Неизвестно'
+        if account_name not in expenses_by_account:
+            expenses_by_account[account_name] = 0
+        expenses_by_account[account_name] += float(transaction.sum_outgoing or 0)
+    
+    return {
+        "total_expenses": total_expenses,
+        "total_transactions": len(transactions),
+        "expenses_by_type": expenses_by_type,
+        "expenses_by_account": expenses_by_account,
+        "transactions": transactions,
+        "period": {
+            "start": start_date.strftime("%d.%m.%Y %H:%M"),
+            "end": end_date.strftime("%d.%m.%Y %H:%M")
+        }
+    }

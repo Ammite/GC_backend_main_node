@@ -27,7 +27,8 @@ def init_db():
         User, Roles, AttendanceType, Category, DOrder, Employees, Item,
         MenuCategory, Modifier, OrderType, Organization, Penalty,
         ProductGroup, RestaurantSection, Reward, ScheduleType, Shift,
-        TOrder, Table, TerminalGroup, Terminal, UserReward, UserSalary, Transaction
+        TOrder, Table, TerminalGroup, Terminal, UserReward, UserSalary, Transaction, 
+        Sales, BankCommission, Account
     )
     Base.metadata.create_all(bind=engine)
     print("Database tables created successfully!")

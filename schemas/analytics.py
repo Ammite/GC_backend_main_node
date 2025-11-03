@@ -69,3 +69,5 @@ class AnalyticsResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ExpensesAnalyticsResponse(BaseModel):
+    pass

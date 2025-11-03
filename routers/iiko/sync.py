@@ -193,6 +193,52 @@ async def sync_tables(
         )
 
 
+@router.post("/accounts")
+async def sync_accounts(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Синхронизация счетов с iiko API (Server API)
+    """
+    try:
+        logger.info("Запуск синхронизации счетов")
+        result = await iiko_sync.sync_accounts(db)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация счетов завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации счетов: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка синхронизации счетов: {str(e)}"
+        )
+
+
+@router.post("/salaries")
+async def sync_salaries(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """
+    Синхронизация окладов сотрудников с iiko API (Server API)
+    """
+    try:
+        logger.info("Запуск синхронизации окладов")
+        result = await iiko_sync.sync_salaries(db)
+        
+        return {
+            "success": True,
+            "message": "Синхронизация окладов завершена",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации окладов: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка синхронизации окладов: {str(e)}"
+        )
+
+
 @router.post("/menu")
 async def sync_menu(
     organization_id: str = None,

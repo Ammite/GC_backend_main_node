@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 from typing import Optional
 from datetime import datetime
 from models.employees import Employees
@@ -86,8 +86,13 @@ def calculate_waiter_salary(
     # Рассчитываем базовую зарплату (процент от выручки)
     base_salary = total_revenue * (salary_percentage / 100)
     
-    # Получаем штрафы за день
-    penalties_query = db.query(Penalty).filter(Penalty.roles_id == user.id)
+    # Получаем штрафы за день (по user_id или employee_id)
+    penalties_query = db.query(Penalty).filter(
+        or_(
+            Penalty.user_id == user.id,
+            Penalty.employee_id == waiter_id
+        )
+    )
     penalties = penalties_query.all()
     
     total_penalties = sum(float(penalty.penalty_sum or 0) for penalty in penalties)

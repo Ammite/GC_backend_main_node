@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from models.item import Item
+from models.menu_category import MenuCategory
 from schemas.menu import ItemResponse
 
 
@@ -12,16 +13,32 @@ def get_all_menu_items(
     limit: int = 100,
     offset: int = 0,
 ) -> List[ItemResponse]:
-    query = db.query(Item)
+    # Джойним с menu_categories для получения названия категории
+    query = db.query(
+        Item,
+        MenuCategory.name.label("category_name")
+    ).outerjoin(
+        MenuCategory, Item.menu_category_id == MenuCategory.id
+    )
 
     if organization_id is not None:
         query = query.filter(Item.organization_id == organization_id)
     if category_id is not None:
-        query = query.filter(Item.category_id == category_id)
+        # Фильтруем по menu_category_id
+        query = query.filter(Item.menu_category_id == category_id)
     if name:
         query = query.filter(Item.name.ilike(f"%{name}%"))
 
     query = query.filter(Item.deleted == False)  # noqa: E712
-    items = query.offset(offset).limit(limit).all()
+    query = query.filter(Item.type_server == 'DISH')
+    
+    results = query.offset(offset).limit(limit).all()
 
-    return [ItemResponse(name=i.name) for i in items]
+    return [ItemResponse(
+        id=item.id, 
+        name=item.name, 
+        price=float(item.price),
+        description=item.description or "",
+        image="",
+        category=category_name or ""
+        ) for item, category_name in results]
