@@ -17,6 +17,7 @@ def get_orders(
     organization_id: Optional[int] = Query(default=None),
     user_id: Optional[int] = Query(default=None),
     state: Optional[str] = Query(default=None),
+    date: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -27,6 +28,7 @@ def get_orders(
         organization_id=organization_id,
         user_id=user_id,
         state=state,
+        date=date,
         limit=limit,
         offset=offset,
     )

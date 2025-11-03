@@ -67,6 +67,22 @@ class IncomeItem(BaseModel):
     source: str
     amount: float
     date: str
+    category: Optional[str] = None  # Категория меню
+    payment_type: Optional[str] = None  # Тип оплаты
+
+
+class IncomeByCategoryItem(BaseModel):
+    """Доход по категории меню"""
+    id: int
+    category: str  # Название категории (Горячие блюда, Напитки и т.д.)
+    amount: float
+
+
+class IncomeByPaymentItem(BaseModel):
+    """Доход по типу оплаты"""
+    id: int
+    payment_type: str  # Тип оплаты (Kaspi, Наличные и т.д.)
+    amount: float
 
 
 class DishesMetric(BaseModel):
@@ -100,7 +116,8 @@ class IncomesMetric(BaseModel):
     label: str
     value: str
     type: str  # "positive"
-    data: List[IncomeItem]
+    income_by_category: List[IncomeByCategoryItem]  # Доходы по категориям меню
+    income_by_pay_type: List[IncomeByPaymentItem]   # Доходы по типам оплаты
 
 
 class MoneyFlowResponse(BaseModel):
