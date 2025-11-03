@@ -1,44 +1,30 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 from typing import Optional
-from datetime import datetime, timedelta
-from models.d_order import DOrder
-from models.sales import Sales
-from models.employees import Employees
-from models.user import User
-from models.account import Account
-from models.transaction import Transaction
 from schemas.analytics import (
     AnalyticsResponse,
     ExpensesAnalyticsResponse,
+    ExpenseTypeData,
+    ExpenseTransactionItem,
     Metric,
     Report,
     OrderMetric,
     FinancialMetric,
     InventoryMetric,
     EmployeeAnalytic,
-    ChangeMetric
 )
-
-
-def format_currency(amount: float) -> str:
-    """Форматировать сумму в строку с разделителями"""
-    return f"{int(amount):,} тг".replace(",", " ")
-
-
-def calculate_change_percent(current: float, previous: float) -> Optional[ChangeMetric]:
-    """Рассчитать процент изменения"""
-    if previous == 0:
-        return None
-    
-    change = ((current - previous) / previous) * 100
-    trend = "up" if change > 0 else "down"
-    sign = "+" if change > 0 else ""
-    
-    return ChangeMetric(
-        value=f"{sign}{int(change)}%",
-        trend=trend
-    )
+from services.transactions_and_statistics.statistics_service import (
+    format_currency,
+    calculate_change_percent,
+    parse_date,
+    get_period_dates,
+    get_orders_for_period,
+    calculate_revenue_from_orders,
+    calculate_average_check,
+    get_returns_sum_from_sales,
+    get_cost_of_goods_from_sales,
+    get_top_employees_by_revenue,
+    get_expenses_from_transactions
+)
 
 
 def get_analytics(
@@ -59,68 +45,23 @@ def get_analytics(
     Returns:
         Аналитические данные
     """
-    # Парсим дату
-    if date:
-        try:
-            target_date = datetime.strptime(date, "%d.%m.%Y")
-        except ValueError:
-            target_date = datetime.now()
-    else:
-        target_date = datetime.now()
+    # Парсим дату и определяем период
+    target_date = parse_date(date)
+    start_date, end_date, previous_start, previous_end = get_period_dates(target_date, period)
     
-    # Определяем период
-    if period == "week":
-        start_date = target_date - timedelta(days=7)
-        previous_start = start_date - timedelta(days=7)
-        previous_end = start_date
-    elif period == "month":
-        start_date = target_date - timedelta(days=30)
-        previous_start = start_date - timedelta(days=30)
-        previous_end = start_date
-    else:  # day
-        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        previous_start = start_date - timedelta(days=1)
-        previous_end = start_date
-    
-    end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-    
-    # Получаем заказы за текущий период
-    query = db.query(DOrder).filter(
-        and_(
-            DOrder.time_order >= start_date,
-            DOrder.time_order <= end_date,
-            DOrder.deleted == False
-        )
-    )
-    
-    if organization_id:
-        query = query.filter(DOrder.organization_id == organization_id)
-    
-    orders = query.all()
-    
-    # Получаем заказы за предыдущий период (для сравнения)
-    previous_query = db.query(DOrder).filter(
-        and_(
-            DOrder.time_order >= previous_start,
-            DOrder.time_order < previous_end,
-            DOrder.deleted == False
-        )
-    )
-    
-    if organization_id:
-        previous_query = previous_query.filter(DOrder.organization_id == organization_id)
-    
-    previous_orders = previous_query.all()
+    # Получаем заказы за текущий и предыдущий период
+    orders = get_orders_for_period(db, start_date, end_date, organization_id)
+    previous_orders = get_orders_for_period(db, previous_start, previous_end, organization_id)
     
     # Считаем метрики
-    current_revenue = sum(float(order.discount or 0) for order in orders)
-    previous_revenue = sum(float(order.discount or 0) for order in previous_orders)
+    current_revenue = calculate_revenue_from_orders(orders, use_discount=True)
+    previous_revenue = calculate_revenue_from_orders(previous_orders, use_discount=True)
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)
     
-    current_avg_check = current_revenue / current_checks if current_checks > 0 else 0
-    previous_avg_check = previous_revenue / previous_checks if previous_checks > 0 else 0
+    current_avg_check = calculate_average_check(orders, use_discount=True)
+    previous_avg_check = calculate_average_check(previous_orders, use_discount=True)
     
     # Формируем основные метрики
     metrics = [
@@ -157,39 +98,11 @@ def get_analytics(
     ]
     
     # Метрики заказов
-    '''
-    Нужно брать sales, и фильтровать по deleted_with_writeoff = 'DELETED_WITHOUT_WRITEOFF'
-    Потом чтобы было cashier != 'Удаление позиций'
-    И order_deleted != 'DELETED'
-
-    И суммируем по dish_sum_int
-    '''
-
-    sales_query = db.query(Sales).filter(
-        Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF',
-        Sales.cashier != 'Удаление позиций',
-        Sales.order_deleted != 'DELETED',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
-    )
-    if organization_id:
-        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+    # Получаем возвраты из Sales
+    returns_sum = get_returns_sum_from_sales(db, start_date, end_date, organization_id)
     
-    sales = sales_query.all()
-    returns_sum = sum(float(sale.dish_sum_int or 0) for sale in sales)
-
-    
-    sales_for_cost_of_goods = db.query(Sales).filter(
-        Sales.cashier != 'Удаление позиций',
-        Sales.order_deleted != 'DELETED',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
-    )
-    if organization_id:
-        sales_query = sales_query.filter(Sales.organization_id == organization_id)
-    
-    sales_for_cost_of_goods = sales_for_cost_of_goods.all()
-    cost_of_goods = sum(float(sale.product_cost_base_product_cost or 0) for sale in sales_for_cost_of_goods)
+    # Получаем себестоимость проданных товаров
+    cost_of_goods = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
     
     order_metrics = [
         OrderMetric(
@@ -226,36 +139,10 @@ def get_analytics(
     ]
     
     # Топ сотрудников по выручке
-    # Считаем по таблице Sales, группируем по order_waiter_id (официант)
-    employee_stats = db.query(
-        Employees.name.label("waiter_name"),
-        Employees.iiko_id.label("waiter_id"),
-        Employees.id.label("employee_id"),
-        func.sum(Sales.dish_discount_sum_int).label("total_revenue")
-    ).join(
-        Employees, Sales.order_waiter_id == Employees.iiko_id
-    ).filter(
-        and_(
-            Sales.open_time >= start_date,
-            Sales.open_time <= end_date,
-            Sales.cashier != 'Удаление позиций',
-            Sales.order_deleted != 'DELETED'
-        )
-    )
-    
-    if organization_id:
-        employee_stats = employee_stats.filter(Sales.organization_id == organization_id)
-    
-    employee_stats = employee_stats.group_by(
-        Employees.name, 
-        Employees.iiko_id,
-        Employees.id
-    ).order_by(
-        func.sum(Sales.dish_discount_sum_int).desc()
-    ).limit(10).all()
+    employee_stats = get_top_employees_by_revenue(db, start_date, end_date, organization_id, limit=10)
     
     employees_analytics = []
-    for idx, (waiter_name, waiter_id, employee_id, total_revenue) in enumerate(employee_stats, start=1):
+    for waiter_name, waiter_id, employee_id, total_revenue in employee_stats:
         employees_analytics.append(
             EmployeeAnalytic(
                 id=employee_id,
@@ -284,99 +171,27 @@ def get_expenses_analytics(
 ) -> ExpensesAnalyticsResponse:
     """
     Получить аналитику расходов
-    Типы которые есть в таблице transactions
-    "EMPLOYEES_LIABILITY"
-    "EQUITY"
-    "CLIENTS_LIABILITY"
-    "OTHER_INCOME"
-    "INVENTORY_ASSETS"
-    "OTHER_CURRENT_LIABILITY"
-    "DEBTS_OF_EMPLOYEES"
-    "OTHER_CURRENT_ASSET"
-    "COST_OF_GOODS_SOLD"
-    "CASH"
-    "INCOME"
-    "EXPENSES"
-    "ACCOUNTS_PAYABLE"
-
-    Нужно получить id у типов EXPENSES и EQUITY и EMPLOYEES_LIABILITY и DEBTS_OF_EMPLOYEES.
+    
+    Args:
+        db: сессия БД
+        date: дата в формате "DD.MM.YYYY"
+        period: период аналитики ("day" | "week" | "month")
+        organization_id: ID организации (фильтр)
+    
+    Returns:
+        Структурированные данные о расходах с группировкой по типам
     """
-    # Парсим дату
-    if date:
-        try:
-            target_date = datetime.strptime(date, "%d.%m.%Y")
-        except ValueError:
-            target_date = datetime.now()
-    else:
-        target_date = datetime.now()
+    # Парсим дату и определяем период
+    target_date = parse_date(date)
+    start_date, end_date, _, _ = get_period_dates(target_date, period)
     
-    # Определяем период
-    if period == "week":
-        start_date = target_date - timedelta(days=7)
-    elif period == "month":
-        start_date = target_date - timedelta(days=30)
-    else:  # day
-        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Получаем расходы из транзакций
+    expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY']
+    result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
     
-    end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-    
-    # Шаг 1: Получаем аккаунты с нужными типами
-    expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY', 'DEBTS_OF_EMPLOYEES']
-    
-    accounts = db.query(Account).filter(
-        Account.type.in_(expense_types),
-        Account.deleted == False
-    ).all()
-    
-    # Шаг 2: Извлекаем iiko_id из аккаунтов
-    account_iiko_ids = [account.iiko_id for account in accounts]
-    
-    # Шаг 3: Получаем транзакции по этим account_id
-    transactions_query = db.query(Transaction).filter(
-        Transaction.account_id.in_(account_iiko_ids),
-        Transaction.date_time >= start_date,
-        Transaction.date_time <= end_date,
-        Transaction.is_active == True
+    return ExpensesAnalyticsResponse(
+        success=True,
+        message=f"Получено расходов: {format_currency(result['expenses_amount'])}",
+        expenses_amount=result['expenses_amount'],
+        data=result['data']
     )
-    
-    # Фильтруем по организации если указана
-    if organization_id:
-        transactions_query = transactions_query.filter(
-            Transaction.organization_id == organization_id
-        )
-    
-    transactions = transactions_query.all()
-    
-    # Считаем общую сумму расходов
-    total_expenses = sum(
-        float(transaction.sum_outgoing or 0) 
-        for transaction in transactions
-    )
-    
-    # Группируем расходы по типу счета
-    expenses_by_type = {}
-    for transaction in transactions:
-        account_type = transaction.account_type or 'Неизвестно'
-        if account_type not in expenses_by_type:
-            expenses_by_type[account_type] = 0
-        expenses_by_type[account_type] += float(transaction.sum_outgoing or 0)
-    
-    # Группируем расходы по названию счета
-    expenses_by_account = {}
-    for transaction in transactions:
-        account_name = transaction.account_name or 'Неизвестно'
-        if account_name not in expenses_by_account:
-            expenses_by_account[account_name] = 0
-        expenses_by_account[account_name] += float(transaction.sum_outgoing or 0)
-    
-    return {
-        "total_expenses": total_expenses,
-        "total_transactions": len(transactions),
-        "expenses_by_type": expenses_by_type,
-        "expenses_by_account": expenses_by_account,
-        "transactions": transactions,
-        "period": {
-            "start": start_date.strftime("%d.%m.%Y %H:%M"),
-            "end": end_date.strftime("%d.%m.%Y %H:%M")
-        }
-    }

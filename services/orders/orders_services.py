@@ -6,6 +6,7 @@ from models.sales import Sales
 from models.restaurant_sections import RestaurantSection
 from schemas.orders import OrderResponse, OrderItemResponse
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ def get_all_orders(
     organization_id: Optional[int] = None,
     user_id: Optional[int] = None,
     state: Optional[str] = None,
+    date: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
 ) -> List[OrderResponse]:
@@ -25,7 +27,10 @@ def get_all_orders(
         query = query.filter(DOrder.user_id == user_id)
     if state:
         query = query.filter(DOrder.state_order == state)
-
+    if date:
+        datetime_from = datetime.strptime(date, "%d.%m.%Y").replace(hour=0, minute=0, second=0, microsecond=0)
+        datetime_to = datetime.strptime(date, "%d.%m.%Y").replace(hour=23, minute=59, second=59, microsecond=999999)
+        query = query.filter(DOrder.time_order >= datetime_from, DOrder.time_order <= datetime_to)
     query = query.filter(DOrder.deleted == False)  # noqa: E712
     orders = query.offset(offset).limit(limit).all()
 
