@@ -210,21 +210,30 @@ def get_cost_of_goods_from_sales(
     Returns:
         Себестоимость товаров
     """
-    sales_query = db.query(Sales).filter(
-        Sales.cashier != 'Удаление позиций',
-        Sales.order_deleted != 'DELETED',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
-        Sales.dish_amount_int > 0,
-        Sales.product_cost_base_product_cost.isnot(None),
-        Sales.product_cost_base_product_cost > 0
+    # Приводим к датам для сравнения с open_date_typed
+    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
+    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
+    
+    # Используем func.sum для агрегации в БД
+    result = db.query(
+        func.sum(Sales.product_cost_base_product_cost)
+    ).filter(
+        and_(
+            Sales.open_date_typed >= start_date_only,
+            Sales.open_date_typed <= end_date_only,
+            Sales.cashier != 'Удаление позиций',
+            Sales.order_deleted != 'DELETED',
+            Sales.dish_amount_int.isnot(None),
+            Sales.product_cost_base_product_cost.isnot(None),
+            Sales.product_cost_base_product_cost > 0
+        )
     )
     
     if organization_id:
-        sales_query = sales_query.filter(Sales.organization_id == organization_id)
+        result = result.filter(Sales.organization_id == organization_id)
     
-    sales = sales_query.all()
-    return sum(float(sale.product_cost_base_product_cost or 0) for sale in sales)
+    total = result.scalar()
+    return float(total or 0)
 
 
 def get_writeoffs_sum_from_sales(
@@ -621,19 +630,30 @@ def get_popular_dishes(
     Returns:
         Список кортежей (название, количество, сумма)
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # Приводим к датам для сравнения с open_date_typed (который может быть типа Date)
+    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
+    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
+    
+    logger.info(f"Getting popular dishes from {start_date_only} to {end_date_only}")
+    
     query = db.query(
         Sales.dish_name,
         func.sum(Sales.dish_amount_int).label("total_count"),
         func.sum(Sales.dish_discount_sum_int).label("total_amount")
     ).filter(
         and_(
-            Sales.open_date_typed >= start_date,
-            Sales.open_date_typed < end_date,
+            Sales.open_date_typed >= start_date_only,
+            Sales.open_date_typed <= end_date_only,
             Sales.cashier != 'Удаление позиций',
             Sales.order_deleted != 'DELETED',
             Sales.dish_name.isnot(None),
             Sales.dish_amount_int.isnot(None),
-            Sales.dish_discount_sum_int.isnot(None)
+            Sales.dish_amount_int > 0,
+            Sales.dish_discount_sum_int.isnot(None),
+            Sales.dish_discount_sum_int > 0
         )
     )
     
@@ -643,6 +663,8 @@ def get_popular_dishes(
     results = query.group_by(Sales.dish_name).order_by(
         func.sum(Sales.dish_amount_int).desc()
     ).limit(limit).all()
+    
+    logger.info(f"Found {len(results)} unique dishes (popular)")
     
     return results
 
@@ -667,19 +689,25 @@ def get_unpopular_dishes(
     Returns:
         Список кортежей (название, количество, сумма)
     """
+    # Приводим к датам для сравнения с open_date_typed
+    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
+    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
+    
     query = db.query(
         Sales.dish_name,
         func.sum(Sales.dish_amount_int).label("total_count"),
         func.sum(Sales.dish_discount_sum_int).label("total_amount")
     ).filter(
         and_(
-            Sales.open_date_typed >= start_date,
-            Sales.open_date_typed < end_date,
+            Sales.open_date_typed >= start_date_only,
+            Sales.open_date_typed <= end_date_only,
             Sales.cashier != 'Удаление позиций',
             Sales.order_deleted != 'DELETED',
             Sales.dish_name.isnot(None),
             Sales.dish_amount_int.isnot(None),
-            Sales.dish_discount_sum_int.isnot(None)
+            Sales.dish_amount_int > 0,
+            Sales.dish_discount_sum_int.isnot(None),
+            Sales.dish_discount_sum_int > 0
         )
     )
     
@@ -711,14 +739,18 @@ def get_dishes_with_cost(
     Returns:
         Список кортежей (название, количество, себестоимость)
     """
+    # Приводим к датам для сравнения с open_date_typed
+    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
+    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
+    
     query = db.query(
         Sales.dish_name,
         func.sum(Sales.dish_amount_int).label("quantity"),
         func.sum(Sales.product_cost_base_product_cost).label("cost_amount")
     ).filter(
         and_(
-            Sales.open_date_typed >= start_date,
-            Sales.open_date_typed < end_date,
+            Sales.open_date_typed >= start_date_only,
+            Sales.open_date_typed <= end_date_only,
             Sales.cashier != 'Удаление позиций',
             Sales.order_deleted != 'DELETED',
             Sales.dish_name.isnot(None),
