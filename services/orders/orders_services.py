@@ -5,11 +5,13 @@ from models.organization import Organization
 from models.sales import Sales
 from models.restaurant_sections import RestaurantSection
 from schemas.orders import OrderResponse, OrderItemResponse
+from utils.cache import cached
 import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+@cached(ttl_seconds=300, key_prefix="orders")  # Кэш на 5 минут
 def get_all_orders(
     db: Session,
     organization_id: Optional[int] = None,

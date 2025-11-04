@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Optional
+from utils.cache import cached
 from schemas.reports import (
     OrderReportsResponse,
     MoneyFlowResponse,
@@ -41,6 +42,7 @@ from services.transactions_and_statistics.statistics_service import (
 )
 
 
+@cached(ttl_seconds=300, key_prefix="reports_orders")  # Кэш на 5 минут
 def get_order_reports(
     db: Session,
     date: str,
@@ -135,6 +137,7 @@ def get_order_reports(
     )
 
 
+@cached(ttl_seconds=300, key_prefix="reports_moneyflow")  # Кэш на 5 минут
 def get_moneyflow_reports(
     db: Session,
     date: str,
@@ -303,6 +306,7 @@ def get_moneyflow_reports(
     )
 
 
+@cached(ttl_seconds=300, key_prefix="reports_sales_dynamics")  # Кэш на 5 минут
 def get_sales_dynamics(
     db: Session,
     date: str,

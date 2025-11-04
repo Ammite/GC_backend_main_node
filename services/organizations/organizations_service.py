@@ -1,9 +1,11 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from utils.cache import cached
 from models.organization import Organization
 from schemas.organizations import OrganizationResponse
 
 
+@cached(ttl_seconds=900, key_prefix="organizations")  # Кэш на 15 минут
 def get_organizations(
     db: Session,
     name: Optional[str] = None,

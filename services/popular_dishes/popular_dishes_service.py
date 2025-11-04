@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Optional
+from utils.cache import cached
 from schemas.popular_dishes import (
     PopularDishesResponse,
     DishItem
@@ -15,6 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+@cached(ttl_seconds=300, key_prefix="popular_dishes")  # Кэш на 5 минут
 def get_popular_dishes_report(
     db: Session,
     date: Optional[str] = None,

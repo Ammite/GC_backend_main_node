@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from database.database import get_db
 from services.iiko import iiko_sync
 from schemas.users import UserArrayResponse
+from utils.cache import invalidate_cache
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,10 @@ async def sync_organizations(db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         logger.info("Запуск синхронизации организаций")
         result = await iiko_sync.sync_organizations(db)
+        
+        # Инвалидируем кэш организаций
+        invalidate_cache("organizations")
+        logger.info("Кэш организаций инвалидирован")
         
         return {
             "success": True,
@@ -251,6 +256,11 @@ async def sync_menu(
         logger.info(f"Запуск синхронизации меню для организации: {organization_id}")
         result = await iiko_sync.sync_menu(db, organization_id)
         
+        # Инвалидируем кэш меню и товаров
+        invalidate_cache("menu")
+        invalidate_cache("goods")
+        logger.info("Кэш меню и товаров инвалидирован")
+        
         return {
             "success": True,
             "message": "Синхронизация меню завершена",
@@ -429,6 +439,12 @@ async def sync_sales(
             result["errors"] += sync_result.get("errors", 0)
             from_date = temp_to_date
         
+        # Инвалидируем кэш отчетов и аналитики
+        invalidate_cache("reports")
+        invalidate_cache("analytics")
+        invalidate_cache("popular_dishes")
+        logger.info("Кэш отчетов и аналитики инвалидирован")
+        
         return {
             "success": True,
             "message": "Синхронизация продаж завершена",
@@ -452,6 +468,11 @@ async def sync_items_cloud_all(db: Session = Depends(get_db)) -> Dict[str, Any]:
     try:
         logger.info("Запуск синхронизации товаров Cloud API для всех организаций")
         result = await iiko_sync.sync_items_cloud(db)
+        
+        # Инвалидируем кэш меню и товаров
+        invalidate_cache("menu")
+        invalidate_cache("goods")
+        logger.info("Кэш меню и товаров инвалидирован")
         
         return {
             "success": True,
