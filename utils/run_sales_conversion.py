@@ -1,5 +1,13 @@
 """
-Скрипт для запуска конвертации данных из sales в orders.
+ОПТИМИЗИРОВАННЫЙ скрипт для запуска конвертации данных из sales в d_orders.
+
+ОСОБЕННОСТИ:
+- Один SQL-запрос с GROUP BY для получения всех данных
+- Batch операции (commit каждые N записей)
+- Суммирование на уровне БД
+- JOIN с order_types
+- JSON агрегация для customer, payments, discounts
+- Создаются только d_orders (без t_orders)
 
 Примеры использования:
 1. Конвертировать все записи:
@@ -10,6 +18,9 @@
 
 3. Конвертировать за последние N дней:
    python utils/run_sales_conversion.py --days 7
+
+4. С настройкой batch size:
+   python utils/run_sales_conversion.py --all --batch-size 200
 """
 
 import argparse
@@ -34,7 +45,7 @@ def parse_date(date_string: str) -> datetime:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Конвертация данных из таблицы sales в d_orders и t_orders",
+        description="ОПТИМИЗИРОВАННАЯ конвертация данных из таблицы sales в d_orders",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Примеры:
@@ -42,6 +53,7 @@ def main():
   %(prog)s --start 2024-01-01 --end 2024-01-31  # За период
   %(prog)s --days 7                        # За последние 7 дней
   %(prog)s --days 30                       # За последний месяц
+  %(prog)s --all --batch-size 200          # Batch size 200
         """
     )
     
@@ -66,6 +78,12 @@ def main():
         '--end',
         type=str,
         help='Конечная дата в формате YYYY-MM-DD (используется вместе с --start)'
+    )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=100,
+        help='Размер пакета для batch commit (по умолчанию: 100)'
     )
     
     args = parser.parse_args()
@@ -102,22 +120,34 @@ def main():
         print(f"🔄 Режим: Конвертация за период")
         print(f"   Период: {start_date.strftime('%Y-%m-%d')} - {end_date.strftime('%Y-%m-%d')}")
     
+    print(f"⚙️  Batch size: {args.batch_size}")
     print("\n" + "="*60)
     
     # Создаем сессию БД
     db = SessionLocal()
     
     try:
+        # Замеряем время выполнения
+        import time
+        start_time = time.time()
+        
         # Запускаем конвертацию
         stats = convert_sales_to_orders(
             db=db,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            batch_size=args.batch_size
         )
         
-        # Сохраняем изменения
+        elapsed_time = time.time() - start_time
+        
+        # Сохраняем изменения (уже закоммичены в batch'ах, но на всякий случай)
         db.commit()
-        print("\n✅ Все изменения успешно сохранены в базу данных!")
+        
+        print("\n" + "="*60)
+        print("✅ Все изменения успешно сохранены в базу данных!")
+        print(f"⏱️  Время выполнения: {elapsed_time:.2f} секунд")
+        print("="*60)
         
         # Возвращаем код успеха
         return 0
