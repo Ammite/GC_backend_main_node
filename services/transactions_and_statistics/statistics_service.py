@@ -7,6 +7,7 @@ from sqlalchemy import func, and_
 from typing import Optional, List, Tuple, Dict
 from datetime import datetime, timedelta
 from models.d_order import DOrder
+from models.bank_commission import BankCommission
 from models.t_order import TOrder
 from models.item import Item
 from models.sales import Sales
@@ -505,18 +506,17 @@ def get_bank_commission_total(
         Сумма комиссий банка
     """
     commission_query = db.query(
-        func.sum(DOrder.bank_commission)
+        func.sum(BankCommission.bank_commission)
     ).filter(
         and_(
-            DOrder.time_order >= start_date,
-            DOrder.time_order < end_date,
-            DOrder.bank_commission.isnot(None),
-            DOrder.deleted == False
+            BankCommission.time_transaction >= start_date,
+            BankCommission.time_transaction < end_date,
+            BankCommission.bank_commission.isnot(None)
         )
     )
     
     if organization_id:
-        commission_query = commission_query.filter(DOrder.organization_id == organization_id)
+        commission_query = commission_query.filter(BankCommission.organization_id == organization_id)
     
     return float(commission_query.scalar() or 0)
 
