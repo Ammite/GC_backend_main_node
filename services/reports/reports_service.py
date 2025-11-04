@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Optional
+from utils.cache import cached
 from schemas.reports import (
     OrderReportsResponse,
     MoneyFlowResponse,
@@ -37,10 +38,12 @@ from services.transactions_and_statistics.statistics_service import (
     get_writeoffs_details_from_sales,
     get_total_discount_from_orders,
     get_expenses_from_transactions,
-    get_revenue_by_menu_category_and_payment
+    get_revenue_by_menu_category_and_payment,
+    get_bank_commission_total
 )
 
 
+# @cached(ttl_seconds=300, key_prefix="reports_orders")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_order_reports(
     db: Session,
     date: str,
@@ -135,6 +138,7 @@ def get_order_reports(
     )
 
 
+# @cached(ttl_seconds=300, key_prefix="reports_moneyflow")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_moneyflow_reports(
     db: Session,
     date: str,
@@ -209,6 +213,18 @@ def get_moneyflow_reports(
         for idx, expense_group in enumerate(expenses_result["data"], start=1)
     ]
     
+    # Получаем комиссию банка (из d_order.bank_commission) и добавляем в расходы
+    bank_commission = get_bank_commission_total(db, start_date, end_date, organization_id)
+    if bank_commission > 0:
+        expenses_data.append(
+            ExpenseItem(
+                id=len(expenses_data) + 1,
+                reason="Комиссия банков (в)",
+                amount=bank_commission,
+                date=date
+            )
+        )
+    
     # Получаем детализированные данные о доходах по категориям меню и типам оплаты
     revenue_by_category_payment = get_revenue_by_menu_category_and_payment(db, start_date, end_date, organization_id)
     
@@ -272,6 +288,9 @@ def get_moneyflow_reports(
             )
         ]
     
+    # Пересчитываем общую сумму расходов с учетом комиссии банка
+    total_expenses_with_commission = expenses_result["expenses_amount"] + bank_commission
+    
     return MoneyFlowResponse(
         dishes=DishesMetric(
             id=1,
@@ -288,7 +307,7 @@ def get_moneyflow_reports(
         expenses=ExpensesMetric(
             id=3,
             label="Расходы",
-            value=format_currency(expenses_result["expenses_amount"]),
+            value=format_currency(total_expenses_with_commission),
             type="negative",
             data=expenses_data
         ),
@@ -303,6 +322,7 @@ def get_moneyflow_reports(
     )
 
 
+# @cached(ttl_seconds=300, key_prefix="reports_sales_dynamics")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_sales_dynamics(
     db: Session,
     date: str,
