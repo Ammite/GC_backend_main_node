@@ -148,42 +148,64 @@ async def check_token(request: Request, call_next):
         response = await call_next(request)
         return response
     
-    auth_header = request.headers.get("Authorization")
-    bearer_token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        bearer_token = auth_header.split(" ")[1]
+    try:
+        auth_header = request.headers.get("Authorization")
+        bearer_token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            bearer_token = auth_header.split(" ")[1]
 
-    query_token = request.query_params.get("token")
+        query_token = request.query_params.get("token")
 
-    # Разрешаем либо валидный JWT, либо валидный API токен из конфига
-    jwt_ok = False
-    if bearer_token:
-        payload = decode_access_token(bearer_token)
-        jwt_ok = payload is not None
+        # Разрешаем либо валидный JWT, либо валидный API токен из конфига
+        jwt_ok = False
+        if bearer_token:
+            try:
+                payload = decode_access_token(bearer_token)
+                jwt_ok = payload is not None
+            except Exception:
+                jwt_ok = False
 
-    api_token_ok = query_token == config.API_VALID_TOKEN or (auth_header == config.API_VALID_TOKEN)
+        api_token_ok = query_token == config.API_VALID_TOKEN or (auth_header == config.API_VALID_TOKEN)
 
-    if not (jwt_ok or api_token_ok):
-        # Добавляем CORS заголовки даже при ошибке авторизации
+        if not (jwt_ok or api_token_ok):
+            # Добавляем CORS заголовки даже при ошибке авторизации
+            origin = request.headers.get("origin")
+            if origin:
+                raise HTTPException(
+                    status_code=401, 
+                    detail="Token missing or expired",
+                    headers={
+                        "Access-Control-Allow-Origin": origin,
+                        "Access-Control-Allow-Credentials": "true"
+                    }
+                )
+            raise HTTPException(status_code=401, detail="Token missing or expired")
+
+        response = await call_next(request)
+        # Добавляем CORS заголовки ко всем ответам
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+        
+    except HTTPException:
+        # Пробрасываем HTTPException дальше (это наши 401 ошибки)
+        raise
+    except Exception as e:
+        # Любые другие ошибки при проверке токена возвращаем как 401
+        logger.error(f"Ошибка при проверке токена: {str(e)}")
         origin = request.headers.get("origin")
         if origin:
             raise HTTPException(
-                status_code=401, 
-                detail="Invalid or missing token",
+                status_code=401,
+                detail="Token missing or expired",
                 headers={
                     "Access-Control-Allow-Origin": origin,
                     "Access-Control-Allow-Credentials": "true"
                 }
             )
-        raise HTTPException(status_code=401, detail="Invalid or missing token")
-
-    response = await call_next(request)
-    # Добавляем CORS заголовки ко всем ответам
-    origin = request.headers.get("origin")
-    if origin:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+        raise HTTPException(status_code=401, detail="Token missing or expired")
 
 
 def include_routers(application: fastapi.FastAPI) -> None:
