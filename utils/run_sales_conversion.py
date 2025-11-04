@@ -6,7 +6,7 @@
    python utils/run_sales_conversion.py --all
 
 2. Конвертировать за период:
-   python utils/run_sales_conversion.py --start 2024-01-01 --end 2024-01-31
+   python utils/run_sales_conversion.py --start 2025-09-01 --end 2025-10-05
 
 3. Конвертировать за последние N дней:
    python utils/run_sales_conversion.py --days 7

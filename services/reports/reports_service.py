@@ -15,7 +15,9 @@ from schemas.reports import (
     ExpenseItem,
     IncomeItem,
     IncomeByCategoryItem,
-    IncomeByPaymentItem
+    IncomeByPaymentItem,
+    SalesDynamicsResponse,
+    DailySalesData
 )
 from schemas.analytics import ChangeMetric
 from services.transactions_and_statistics.statistics_service import (
@@ -298,5 +300,87 @@ def get_moneyflow_reports(
             income_by_category=income_by_category,
             income_by_pay_type=income_by_pay_type
         )
+    )
+
+
+def get_sales_dynamics(
+    db: Session,
+    date: str,
+    days: int = 7,
+    organization_id: Optional[int] = None,
+) -> SalesDynamicsResponse:
+    """
+    Получить динамику продаж за последние N дней
+    
+    Args:
+        db: сессия БД
+        days: количество дней для анализа (по умолчанию 7)
+        organization_id: ID организации (фильтр)
+    
+    Returns:
+        Динамика продаж с разбивкой по дням
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, and_
+    from models.sales import Sales
+    
+    # Определяем период: сегодня минус N дней
+    end_date = datetime.now().date()
+    if date:
+        end_date = parse_date(date).date()
+    start_date = end_date - timedelta(days=days - 1)  # -1 чтобы включить сегодня
+    
+    daily_data = []
+    total_revenue = 0
+    total_checks = 0
+    
+    # Проходим по каждому дню
+    for i in range(days):
+        current_date = start_date + timedelta(days=i)
+        
+        # Получаем данные за текущий день из Sales
+        query = db.query(
+            func.sum(Sales.dish_discount_sum_int).label("revenue"),
+            func.count(func.distinct(Sales.order_id)).label("checks_count")
+        ).filter(
+            and_(
+                Sales.open_date_typed == current_date,
+                Sales.cashier != 'Удаление позиций',
+                Sales.order_deleted != 'DELETED',
+                Sales.dish_discount_sum_int.isnot(None),
+                Sales.dish_discount_sum_int > 0
+            )
+        )
+        
+        if organization_id:
+            query = query.filter(Sales.organization_id == organization_id)
+        
+        result = query.first()
+        
+        day_revenue = float(result.revenue or 0)
+        day_checks = int(result.checks_count or 0)
+        day_average_check = day_revenue / day_checks if day_checks > 0 else 0
+        
+        daily_data.append(
+            DailySalesData(
+                date=current_date.strftime("%d.%m.%Y"),
+                revenue=day_revenue,
+                checks_count=day_checks,
+                average_check=day_average_check
+            )
+        )
+        
+        total_revenue += day_revenue
+        total_checks += day_checks
+    
+    overall_average_check = total_revenue / total_checks if total_checks > 0 else 0
+    
+    return SalesDynamicsResponse(
+        success=True,
+        message=f"Динамика продаж за последние {days} дней",
+        total_revenue=total_revenue,
+        total_checks=total_checks,
+        overall_average_check=overall_average_check,
+        daily_data=daily_data
     )
 
