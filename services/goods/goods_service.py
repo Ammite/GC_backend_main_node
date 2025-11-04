@@ -28,7 +28,7 @@ def get_all_children_groups(db: Session, parent_iiko_id: str) -> List[ProductGro
     return all_children
 
 
-@cached(ttl_seconds=600, key_prefix="goods")  # Кэш на 10 минут
+# @cached(ttl_seconds=600, key_prefix="goods")  # Кэш на 10 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_goods_by_categories(db: Session) -> List[GoodsCategoryResponse]:
     """
     Получает товары по заданным категориям и их дочерним группам

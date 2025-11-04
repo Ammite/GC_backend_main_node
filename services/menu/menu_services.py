@@ -6,7 +6,7 @@ from models.menu_category import MenuCategory
 from schemas.menu import ItemResponse
 
 
-@cached(ttl_seconds=600, key_prefix="menu")  # Кэш на 10 минут
+# @cached(ttl_seconds=600, key_prefix="menu")  # Кэш на 10 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_all_menu_items(
     db: Session,
     organization_id: Optional[int] = None,

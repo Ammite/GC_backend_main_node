@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@cached(ttl_seconds=300, key_prefix="popular_dishes")  # Кэш на 5 минут
+# @cached(ttl_seconds=300, key_prefix="popular_dishes")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_popular_dishes_report(
     db: Session,
     date: Optional[str] = None,

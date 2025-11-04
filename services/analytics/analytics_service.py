@@ -28,7 +28,7 @@ from services.transactions_and_statistics.statistics_service import (
 )
 
 
-@cached(ttl_seconds=300, key_prefix="analytics")  # Кэш на 5 минут
+# @cached(ttl_seconds=300, key_prefix="analytics")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_analytics(
     db: Session,
     date: Optional[str] = None,
@@ -169,7 +169,7 @@ def get_analytics(
 
 
 
-@cached(ttl_seconds=300, key_prefix="analytics_expenses")  # Кэш на 5 минут
+# @cached(ttl_seconds=300, key_prefix="analytics_expenses")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 def get_expenses_analytics(
     db: Session,
     date: Optional[str] = None,
