@@ -1,39 +1,35 @@
 """
-Утилита для создания заказов (d_orders и t_orders) из записей таблицы sales.
+Утилита для создания заказов (d_orders) из записей таблицы sales.
 
 Этот модуль преобразует данные из таблицы sales (отчеты из iiko) 
-в структурированные заказы в таблицах d_orders и t_orders.
+в структурированные заказы в таблице d_orders.
 
-ВАЖНО: Структура данных в sales:
-- Каждая запись sales = одно проданное блюдо (не весь заказ!)
-- Если в заказе 3 блюда → 3 записи в sales с одинаковым order_id
-- У sales НЕТ уникального ID для позиций:
-  * item_sale_event_id - это НЕ iiko_id
-  * item_sale_event_id может повторяться
-- Поэтому TOrder создаются БЕЗ iiko_id (будет NULL)
+ОПТИМИЗИРОВАННАЯ ВЕРСИЯ:
+- Один SQL-запрос с GROUP BY для получения всех данных
+- Batch операции (commit каждые 100 заказов)
+- Суммирование dish_sum_int и dish_discount_sum_int на уровне БД
+- JOIN с order_types для получения типов заказов
+- Минимальная нагрузка на Python
 
 Логика работы:
-1. Группируем все sales по order_id
-2. Для каждого уникального order_id создаем ОДИН заказ в d_orders
-3. Для каждой записи sales создаем позицию в t_orders
+1. Один SQL-запрос группирует все sales по order_id и суммирует суммы
+2. Batch создание заказов в d_orders (по 100 штук)
+3. t_orders не создаются (можно добавить отдельным запуском)
 """
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import text
 from typing import Dict, List, Optional
 from datetime import datetime
 from decimal import Decimal
+import json
 
-from models.sales import Sales
 from models.d_order import DOrder
-from models.t_order import TOrder
-from models.item import Item
-from models.organization import Organization
-from models.order_types import OrderType
+from database.database import engine
 
 
 class OrderFromSalesConverter:
-    """Класс для конвертации записей Sales в Orders"""
+    """Оптимизированный класс для конвертации записей Sales в Orders"""
     
     def __init__(self, db: Session):
         self.db = db
@@ -41,107 +37,261 @@ class OrderFromSalesConverter:
             "processed_orders": 0,
             "created_orders": 0,
             "updated_orders": 0,
-            "created_items": 0,
-            "skipped_sales": 0,
+            "skipped_orders": 0,
             "errors": []
         }
     
-    def convert_all_sales(self) -> Dict:
+    def convert_all_sales(self, batch_size: int = 100) -> Dict:
         """
         Конвертирует все записи из таблицы sales в заказы.
+        Использует один SQL-запрос и batch операции.
+        
+        Args:
+            batch_size: Размер пакета для commit (по умолчанию 100)
         
         Returns:
             Dict: Статистика выполнения
         """
-        print("🔄 Начинаем конвертацию sales -> orders...")
+        print("🔄 Начинаем оптимизированную конвертацию sales -> orders...")
+        print(f"   Batch size: {batch_size}")
         
-        # Получаем все уникальные order_id из sales
-        unique_order_ids = self.db.query(Sales.order_id)\
-            .filter(Sales.order_id.isnot(None))\
-            .distinct()\
-            .all()
+        # Получаем агрегированные данные одним запросом
+        grouped_sales = self._get_grouped_sales_data()
         
-        total_orders = len(unique_order_ids)
+        total_orders = len(grouped_sales)
         print(f"📊 Найдено уникальных заказов: {total_orders}")
         
-        for idx, (order_id,) in enumerate(unique_order_ids, 1):
+        # Batch обработка
+        batch_counter = 0
+        for idx, sale_data in enumerate(grouped_sales, 1):
             if idx % 10 == 0 or idx == total_orders:
                 print(f"   Обработано: {idx}/{total_orders} заказов...")
             
             try:
-                self._process_order(order_id)
+                self._create_or_update_order(sale_data)
+                batch_counter += 1
+                
+                # Commit каждые batch_size записей
+                if batch_counter >= batch_size:
+                    self.db.commit()
+                    batch_counter = 0
+                    
             except Exception as e:
-                error_msg = f"Ошибка при обработке заказа {order_id}: {str(e)}"
+                error_msg = f"Ошибка при обработке заказа {sale_data.get('order_id')}: {str(e)}"
                 print(f"❌ {error_msg}")
                 self.stats["errors"].append(error_msg)
+                self.db.rollback()
+                batch_counter = 0
         
-        self.db.commit()
+        # Финальный commit для оставшихся записей
+        if batch_counter > 0:
+            self.db.commit()
+        
         self._print_stats()
         return self.stats
     
     def convert_sales_by_date_range(
         self, 
         start_date: datetime, 
-        end_date: datetime
+        end_date: datetime,
+        batch_size: int = 100
     ) -> Dict:
         """
         Конвертирует записи sales за указанный период.
+        Использует один SQL-запрос и batch операции.
         
         Args:
             start_date: Начало периода
             end_date: Конец периода
+            batch_size: Размер пакета для commit (по умолчанию 100)
             
         Returns:
             Dict: Статистика выполнения
         """
-        print(f"🔄 Конвертация заказов с {start_date} по {end_date}...")
+        print(f"🔄 Оптимизированная конвертация заказов с {start_date} по {end_date}...")
+        print(f"   Batch size: {batch_size}")
         
-        unique_order_ids = self.db.query(Sales.order_id)\
-            .filter(
-                Sales.order_id.isnot(None),
-                Sales.open_time >= start_date,
-                Sales.open_time <= end_date
-            )\
-            .distinct()\
-            .all()
+        # Получаем агрегированные данные за период одним запросом
+        grouped_sales = self._get_grouped_sales_data(start_date, end_date)
         
-        total_orders = len(unique_order_ids)
+        total_orders = len(grouped_sales)
         print(f"📊 Найдено заказов за период: {total_orders}")
         
-        for idx, (order_id,) in enumerate(unique_order_ids, 1):
+        # Batch обработка
+        batch_counter = 0
+        for idx, sale_data in enumerate(grouped_sales, 1):
             if idx % 10 == 0 or idx == total_orders:
                 print(f"   Обработано: {idx}/{total_orders} заказов...")
             
             try:
-                self._process_order(order_id)
+                self._create_or_update_order(sale_data)
+                batch_counter += 1
+                
+                # Commit каждые batch_size записей
+                if batch_counter >= batch_size:
+                    self.db.commit()
+                    batch_counter = 0
+                    
             except Exception as e:
-                error_msg = f"Ошибка при обработке заказа {order_id}: {str(e)}"
+                error_msg = f"Ошибка при обработке заказа {sale_data.get('order_id')}: {str(e)}"
                 print(f"❌ {error_msg}")
                 self.stats["errors"].append(error_msg)
+                self.db.rollback()
+                batch_counter = 0
         
-        self.db.commit()
+        # Финальный commit для оставшихся записей
+        if batch_counter > 0:
+            self.db.commit()
+        
         self._print_stats()
         return self.stats
     
-    def _process_order(self, order_id: str) -> None:
+    def _get_grouped_sales_data(
+        self, 
+        start_date: Optional[datetime] = None, 
+        end_date: Optional[datetime] = None
+    ) -> List[Dict]:
         """
-        Обрабатывает один заказ: создает или обновляет записи в d_orders и t_orders.
+        Получает агрегированные данные о продажах одним SQL-запросом.
+        Группирует по order_id, суммирует суммы, джойнит с order_types.
         
         Args:
-            order_id: ID заказа из iiko
+            start_date: Начало периода (опционально)
+            end_date: Конец периода (опционально)
+        
+        Returns:
+            List[Dict]: Список агрегированных заказов
         """
-        # Получаем все записи sales для этого заказа
-        sales_records = self.db.query(Sales)\
-            .filter(Sales.order_id == order_id)\
-            .order_by(Sales.open_time)\
-            .all()
+        # Базовый запрос с группировкой и суммированием
+        date_filter = ""
+        if start_date and end_date:
+            date_filter = f"AND s.open_time >= '{start_date.isoformat()}' AND s.open_time <= '{end_date.isoformat()}'"
         
-        if not sales_records:
-            self.stats["skipped_sales"] += 1
-            return
+        query = text(f"""
+            SELECT 
+                s.order_id,
+                MAX(s.external_number) as external_number,
+                MAX(s.delivery_phone) as phone,
+                MAX(s.guest_num) as guest_count,
+                MAX(s.table_num) as tab_name,
+                SUM(s.dish_sum_int) as sum_order,
+                SUM(s.dish_discount_sum_int) as discount,
+                MAX(s.open_time) as time_order,
+                MAX(s.order_deleted) as state_order,
+                MAX(s.organization_id) as organization_id,
+                MAX(s.order_type_id) as order_type_iiko_id,
+                ot.id as order_type_id,
+                ot.name as order_type_name,
+                -- JSON агрегации для детальной информации
+                json_agg(
+                    DISTINCT jsonb_build_object(
+                        'customer_name', s.delivery_customer_name,
+                        'customer_phone', s.delivery_customer_phone,
+                        'customer_email', s.delivery_customer_email,
+                        'customer_comment', s.delivery_customer_comment,
+                        'customer_card_number', s.delivery_customer_card_number,
+                        'customer_card_type', s.delivery_customer_card_type
+                    )
+                ) FILTER (WHERE s.delivery_customer_name IS NOT NULL OR s.delivery_customer_phone IS NOT NULL) as customer_data,
+                json_agg(
+                    DISTINCT jsonb_build_object(
+                        'pay_type', s.pay_types,
+                        'sum', s.dish_sum_int,
+                        'is_print_cheque', s.pay_types_is_print_cheque,
+                        'voucher_num', s.pay_types_voucher_num
+                    )
+                ) FILTER (WHERE s.pay_types IS NOT NULL) as payments_data,
+                json_agg(
+                    DISTINCT jsonb_build_object(
+                        'discount_type', s.order_discount_type,
+                        'discount_sum', s.discount_sum,
+                        'discount_percent', s.discount_percent,
+                        'guest_card', s.order_discount_guest_card
+                    )
+                ) FILTER (WHERE s.discount_sum IS NOT NULL AND s.discount_sum > 0) as discounts_data,
+                json_build_object(
+                    'delivery', json_agg(
+                        DISTINCT jsonb_build_object(
+                            'is_delivery', s.delivery_is_delivery,
+                            'address', s.delivery_address,
+                            'city', s.delivery_city,
+                            'street', s.delivery_street,
+                            'courier', s.delivery_courier,
+                            'courier_id', s.delivery_courier_id,
+                            'expected_time', s.delivery_expected_time,
+                            'actual_time', s.delivery_actual_time
+                        )
+                    ) FILTER (WHERE s.delivery_is_delivery IS NOT NULL),
+                    'terminal', json_agg(
+                        DISTINCT jsonb_build_object(
+                            'session_id', s.session_id,
+                            'session_num', s.session_num,
+                            'cash_register', s.cash_register_name,
+                            'cash_register_number', s.cash_register_name_number
+                        )
+                    ) FILTER (WHERE s.session_id IS NOT NULL OR s.cash_register_name IS NOT NULL),
+                    'waiter', json_agg(
+                        DISTINCT jsonb_build_object(
+                            'name', s.waiter_name,
+                            'id', s.waiter_name_id
+                        )
+                    ) FILTER (WHERE s.waiter_name IS NOT NULL),
+                    'cashier', json_agg(
+                        DISTINCT jsonb_build_object(
+                            'name', s.cashier,
+                            'id', s.cashier_id
+                        )
+                    ) FILTER (WHERE s.cashier IS NOT NULL)
+                ) as external_data
+            FROM 
+                public.sales s
+            LEFT JOIN 
+                public.order_types ot ON s.order_type_id = ot.iiko_id
+            WHERE 
+                s.order_id IS NOT NULL
+                {date_filter}
+            GROUP BY 
+                s.order_id, ot.id, ot.name
+            ORDER BY 
+                s.order_id ASC
+        """)
         
-        # Берем первую запись для получения общей информации о заказе
-        first_sale = sales_records[0]
+        result = self.db.execute(query)
+        rows = result.fetchall()
+        
+        # Преобразуем результат в список словарей
+        grouped_sales = []
+        for row in rows:
+            grouped_sales.append({
+                'order_id': row[0],
+                'external_number': row[1],
+                'phone': row[2],
+                'guest_count': row[3] or 0,
+                'tab_name': row[4],
+                'sum_order': float(row[5]) if row[5] else 0.0,
+                'discount': float(row[6]) if row[6] else 0.0,
+                'time_order': row[7],
+                'state_order': row[8] or "completed",
+                'organization_id': row[9],
+                'order_type_iiko_id': row[10],
+                'order_type_id': row[11],
+                'order_type_name': row[12],
+                'customer_data': row[13],
+                'payments_data': row[14],
+                'discounts_data': row[15],
+                'external_data': row[16]
+            })
+        
+        return grouped_sales
+    
+    def _create_or_update_order(self, sale_data: Dict) -> None:
+        """
+        Создает или обновляет заказ на основе агрегированных данных из SQL-запроса.
+        
+        Args:
+            sale_data: Словарь с агрегированными данными заказа
+        """
+        order_id = sale_data['order_id']
         
         # Проверяем, существует ли уже заказ
         existing_order = self.db.query(DOrder)\
@@ -149,348 +299,121 @@ class OrderFromSalesConverter:
             .first()
         
         if existing_order:
+            return
             # Обновляем существующий заказ
-            order = self._update_order(existing_order, sales_records)
+            self._update_existing_order(existing_order, sale_data)
             self.stats["updated_orders"] += 1
         else:
             # Создаем новый заказ
-            order = self._create_order(first_sale, sales_records)
-            self.db.add(order)
-            self.db.flush()  # Получаем ID для связи с t_orders
+            new_order = self._create_new_order(sale_data)
+            self.db.add(new_order)
             self.stats["created_orders"] += 1
-        
-        # Обрабатываем позиции заказа
-        self._process_order_items(order, sales_records)
         
         self.stats["processed_orders"] += 1
     
-    def _create_order(self, first_sale: Sales, sales_records: List[Sales]) -> DOrder:
+    def _create_new_order(self, sale_data: Dict) -> DOrder:
         """
-        Создает новую запись заказа в d_orders.
+        Создает новый заказ из агрегированных данных.
         
         Args:
-            first_sale: Первая запись продажи для получения общей информации
-            sales_records: Все записи продаж для этого заказа
+            sale_data: Словарь с агрегированными данными
             
         Returns:
-            DOrder: Созданный заказ
+            DOrder: Новый заказ
         """
-        # Получаем или создаем organization
-        organization_id = self._get_or_create_organization(first_sale)
+        # Обрабатываем customer_data
+        customer_info = None
+        if sale_data['customer_data']:
+            customer_list = sale_data['customer_data']
+            if customer_list and len(customer_list) > 0:
+                customer_info = customer_list[0]
         
-        # Получаем или создаем order_type
-        order_type_id = self._get_or_create_order_type(first_sale)
+        # Обрабатываем payments_data
+        payments_info = sale_data['payments_data'] if sale_data['payments_data'] else None
         
-        # Рассчитываем общую сумму заказа
-        total_sum = sum(
-            sale.dish_sum_int or Decimal(0) 
-            for sale in sales_records
-        )
+        # Обрабатываем discounts_data
+        discounts_info = sale_data['discounts_data'] if sale_data['discounts_data'] else None
         
-        # Рассчитываем общую скидку
-        total_discount = sum(
-            sale.dish_discount_sum_int or Decimal(0) 
-            for sale in sales_records
-        )
+        # Обрабатываем external_data
+        external_data = sale_data['external_data'] if sale_data['external_data'] else None
         
         # Создаем заказ
         order = DOrder(
-            iiko_id=first_sale.order_id,
-            organization_id=organization_id,
-            external_number=first_sale.external_number,
-            phone=first_sale.delivery_phone,
-            guest_count=first_sale.guest_num or 0,
-            tab_name=first_sale.table_num if first_sale.table_num else None,
-            order_type_id=order_type_id,
-            sum_order=total_sum,
-            state_order=first_sale.order_deleted or "completed",
-            discount=total_discount,
-            service=None,  # Можно добавить, если есть данные
-            bank_commission=None,  # Можно добавить, если есть данные
-            time_order=first_sale.open_time or datetime.now(),
-            deleted=first_sale.order_deleted == "DELETED",
+            iiko_id=sale_data['order_id'],
+            organization_id=sale_data['organization_id'],
+            external_number=sale_data['external_number'],
+            phone=sale_data['phone'],
+            guest_count=sale_data['guest_count'],
+            tab_name=sale_data['tab_name'],
+            order_type_id=sale_data['order_type_id'],
+            sum_order=Decimal(str(sale_data['sum_order'])),
+            state_order=sale_data['state_order'],
+            discount=Decimal(str(sale_data['discount'])),
+            service=None,
+            bank_commission=None,
+            time_order=sale_data['time_order'] or datetime.now(),
+            deleted=sale_data['state_order'] == "DELETED",
             
-            # JSON поля с детальной информацией
-            customer=self._extract_customer_info(first_sale),
-            payments=self._extract_payments_info(sales_records),
-            discounts_info=self._extract_discounts_info(sales_records),
-            external_data=self._extract_external_data(first_sale),
+            # JSON поля
+            customer=json.dumps(customer_info) if customer_info else None,
+            payments=json.dumps(payments_info) if payments_info else None,
+            discounts_info=json.dumps(discounts_info) if discounts_info else None,
+            external_data=json.dumps(external_data) if external_data else None,
         )
         
         return order
     
-    def _update_order(
-        self, 
-        existing_order: DOrder, 
-        sales_records: List[Sales]
-    ) -> DOrder:
+    def _update_existing_order(self, existing_order: DOrder, sale_data: Dict) -> None:
         """
-        Обновляет существующий заказ новой информацией из sales.
+        Обновляет существующий заказ новыми данными.
         
         Args:
             existing_order: Существующий заказ
-            sales_records: Записи продаж для обновления
-            
-        Returns:
-            DOrder: Обновленный заказ
+            sale_data: Агрегированные данные для обновления
         """
-        first_sale = sales_records[0]
-        
         # Обновляем основные поля, если они не были заполнены
-        if not existing_order.phone and first_sale.delivery_phone:
-            existing_order.phone = first_sale.delivery_phone
+        if not existing_order.phone and sale_data['phone']:
+            existing_order.phone = sale_data['phone']
         
-        if not existing_order.guest_count and first_sale.guest_num:
-            existing_order.guest_count = first_sale.guest_num
+        if not existing_order.guest_count and sale_data['guest_count']:
+            existing_order.guest_count = sale_data['guest_count']
         
-        # Пересчитываем суммы
-        total_sum = sum(
-            sale.dish_sum_int or Decimal(0) 
-            for sale in sales_records
-        )
-        total_discount = sum(
-            sale.dish_discount_sum_int or Decimal(0) 
-            for sale in sales_records
-        )
+        if not existing_order.external_number and sale_data['external_number']:
+            existing_order.external_number = sale_data['external_number']
         
-        existing_order.sum_order = total_sum
-        existing_order.discount = total_discount
+        # Обновляем суммы (всегда, т.к. они могли измениться)
+        existing_order.sum_order = Decimal(str(sale_data['sum_order']))
+        existing_order.discount = Decimal(str(sale_data['discount']))
         
-        # Обновляем JSON поля
-        if not existing_order.customer:
-            existing_order.customer = self._extract_customer_info(first_sale)
+        # Обновляем order_type_id если есть
+        if sale_data['order_type_id'] and not existing_order.order_type_id:
+            existing_order.order_type_id = sale_data['order_type_id']
         
-        if not existing_order.payments:
-            existing_order.payments = self._extract_payments_info(sales_records)
+        # Обновляем JSON поля, если они не были заполнены
+        if not existing_order.customer and sale_data['customer_data']:
+            customer_list = sale_data['customer_data']
+            if customer_list and len(customer_list) > 0:
+                existing_order.customer = json.dumps(customer_list[0])
         
-        return existing_order
+        if not existing_order.payments and sale_data['payments_data']:
+            existing_order.payments = json.dumps(sale_data['payments_data'])
+        
+        if not existing_order.discounts_info and sale_data['discounts_data']:
+            existing_order.discounts_info = json.dumps(sale_data['discounts_data'])
+        
+        if not existing_order.external_data and sale_data['external_data']:
+            existing_order.external_data = json.dumps(sale_data['external_data'])
     
-    def _process_order_items(
-        self, 
-        order: DOrder, 
-        sales_records: List[Sales]
-    ) -> None:
-        """
-        Создает позиции заказа в t_orders.
-        
-        ВАЖНО: Каждая запись sales = одна позиция в заказе (одно блюдо).
-        У sales НЕТ уникального ID, поэтому мы не используем iiko_id для t_orders.
-        
-        Args:
-            order: Заказ
-            sales_records: Записи продаж (каждая = одно блюдо в заказе)
-        """
-        # При обновлении заказа удаляем старые позиции, чтобы избежать дубликатов
-        existing_items = self.db.query(TOrder)\
-            .filter(TOrder.order_id == order.id)\
-            .all()
-        
-        # Если позиции уже есть, пропускаем создание (заказ уже был обработан)
-        if existing_items:
-            return
-        
-        for sale in sales_records:
-            # Пропускаем записи без блюда
-            if not sale.dish_id:
-                self.stats["skipped_sales"] += 1
-                continue
-            
-            # Ищем товар по iiko_id
-            item = self.db.query(Item)\
-                .filter(Item.iiko_id == sale.dish_id)\
-                .first()
-            
-            if not item:
-                # Если товар не найден, создаем базовую запись
-                item = self._create_item_from_sale(sale)
-                self.db.add(item)
-                self.db.flush()
-            
-            # Создаем позицию заказа
-            # ВАЖНО: НЕ используем item_sale_event_id как iiko_id, 
-            # т.к. он не уникальный!
-            order_item = TOrder(
-                iiko_id=None,  # У sales нет уникального ID для позиций
-                item_id=item.id,
-                order_id=order.id,
-                count_order=sale.dish_amount_int or 1,
-                time_order=sale.open_time or datetime.now(),
-                comment_order=sale.order_comment
-            )
-            self.db.add(order_item)
-            self.stats["created_items"] += 1
-    
-    def _get_or_create_organization(self, sale: Sales) -> Optional[int]:
-        """Получает или создает организацию из sales."""
-        if not sale.organization_id:
-            return None
-        
-        return sale.organization_id
-    
-    def _get_or_create_order_type(self, sale: Sales) -> Optional[int]:
-        """
-        Получает или создает тип заказа.
-        
-        Args:
-            sale: Запись продажи
-            
-        Returns:
-            Optional[int]: ID типа заказа или None
-        """
-        # Если нет информации о типе заказа - возвращаем None
-        if not sale.order_type_id and not sale.order_type:
-            return None
-        
-        # Определяем iiko_id и name для order_type
-        iiko_id = sale.order_type_id or f"unknown_{sale.order_type}"
-        name = sale.order_type or "Неизвестный тип"
-        
-        # Ищем существующий тип заказа по iiko_id
-        order_type = self.db.query(OrderType)\
-            .filter(OrderType.iiko_id == iiko_id)\
-            .first()
-        
-        if order_type:
-            return order_type.id
-        
-        # Создаем новый тип заказа
-        # Модель OrderType имеет поля: id, iiko_id, name, is_deleted
-        new_order_type = OrderType(
-            iiko_id=iiko_id,
-            name=name,
-            is_deleted=False  # По умолчанию не удалено
-        )
-        self.db.add(new_order_type)
-        self.db.flush()
-        
-        return new_order_type.id
-    
-    def _create_item_from_sale(self, sale: Sales) -> Item:
-        """
-        Создает базовую запись товара из данных sales.
-        
-        Args:
-            sale: Запись продажи
-            
-        Returns:
-            Item: Созданный товар
-        """
-        item = Item(
-            iiko_id=sale.dish_id,
-            name=sale.dish_name or "Неизвестное блюдо",
-            code=sale.dish_code,
-            price=sale.dish_sum_int or Decimal(0),
-            organization_id=sale.organization_id,
-            data_source="sales_import",
-            description=sale.dish_full_name,
-            measure_unit=sale.dish_measure_unit,
-            type=sale.dish_type,
-        )
-        
-        return item
-    
-    def _extract_customer_info(self, sale: Sales) -> Optional[Dict]:
-        """Извлекает информацию о клиенте из sales."""
-        if not any([
-            sale.delivery_customer_name,
-            sale.delivery_customer_phone,
-            sale.delivery_customer_email
-        ]):
-            return None
-        
-        return {
-            "name": sale.delivery_customer_name,
-            "phone": sale.delivery_customer_phone,
-            "email": sale.delivery_customer_email,
-            "comment": sale.delivery_customer_comment,
-            "card_number": sale.delivery_customer_card_number,
-            "card_type": sale.delivery_customer_card_type,
-        }
-    
-    def _extract_payments_info(self, sales_records: List[Sales]) -> Optional[List[Dict]]:
-        """Извлекает информацию о платежах."""
-        payments = []
-        
-        for sale in sales_records:
-            if sale.pay_types and sale.dish_sum_int:
-                payment = {
-                    "type": sale.pay_types,
-                    "sum": float(sale.dish_sum_int),
-                    "is_print_cheque": sale.pay_types_is_print_cheque,
-                    "voucher_num": sale.pay_types_voucher_num,
-                }
-                payments.append(payment)
-        
-        return payments if payments else None
-    
-    def _extract_discounts_info(self, sales_records: List[Sales]) -> Optional[List[Dict]]:
-        """Извлекает информацию о скидках."""
-        discounts = []
-        
-        for sale in sales_records:
-            if sale.discount_sum and sale.discount_sum > 0:
-                discount = {
-                    "type": sale.order_discount_type,
-                    "sum": float(sale.discount_sum),
-                    "percent": float(sale.discount_percent) if sale.discount_percent else None,
-                    "guest_card": sale.order_discount_guest_card,
-                }
-                discounts.append(discount)
-        
-        return discounts if discounts else None
-    
-    def _extract_external_data(self, sale: Sales) -> Optional[Dict]:
-        """Извлекает дополнительные данные о заказе."""
-        external_data = {}
-        
-        # Информация о доставке
-        if sale.delivery_is_delivery:
-            external_data["delivery"] = {
-                "is_delivery": sale.delivery_is_delivery,
-                "address": sale.delivery_address,
-                "city": sale.delivery_city,
-                "street": sale.delivery_street,
-                "courier": sale.delivery_courier,
-                "courier_id": sale.delivery_courier_id,
-                "expected_time": sale.delivery_expected_time.isoformat() if sale.delivery_expected_time else None,
-                "actual_time": sale.delivery_actual_time.isoformat() if sale.delivery_actual_time else None,
-            }
-        
-        # Информация о терминале и сессии
-        if sale.session_id or sale.cash_register_name:
-            external_data["terminal"] = {
-                "session_id": sale.session_id,
-                "session_num": sale.session_num,
-                "cash_register": sale.cash_register_name,
-                "cash_register_number": sale.cash_register_name_number,
-            }
-        
-        # Информация об официанте
-        if sale.waiter_name:
-            external_data["waiter"] = {
-                "name": sale.waiter_name,
-                "id": sale.waiter_name_id,
-            }
-        
-        # Информация о кассире
-        if sale.cashier:
-            external_data["cashier"] = {
-                "name": sale.cashier,
-                "id": sale.cashier_id,
-            }
-        
-        return external_data if external_data else None
     
     def _print_stats(self) -> None:
         """Выводит статистику выполнения."""
         print("\n" + "="*60)
-        print("📊 СТАТИСТИКА КОНВЕРТАЦИИ")
+        print("📊 СТАТИСТИКА ОПТИМИЗИРОВАННОЙ КОНВЕРТАЦИИ")
         print("="*60)
         print(f"✅ Обработано заказов:      {self.stats['processed_orders']}")
         print(f"🆕 Создано новых заказов:   {self.stats['created_orders']}")
         print(f"♻️  Обновлено заказов:       {self.stats['updated_orders']}")
-        print(f"📦 Создано позиций:         {self.stats['created_items']}")
-        print(f"⏭️  Пропущено записей:       {self.stats['skipped_sales']}")
+        print(f"⏭️  Пропущено заказов:       {self.stats['skipped_orders']}")
         
         if self.stats["errors"]:
             print(f"\n❌ Ошибок: {len(self.stats['errors'])}")
@@ -507,15 +430,19 @@ class OrderFromSalesConverter:
 def convert_sales_to_orders(
     db: Session,
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
+    batch_size: int = 100
 ) -> Dict:
     """
-    Основная функция для конвертации sales в orders.
+    ОПТИМИЗИРОВАННАЯ функция для конвертации sales в orders.
+    
+    Использует один SQL-запрос с GROUP BY для агрегации данных и batch операции.
     
     Args:
         db: Сессия базы данных
         start_date: Начальная дата (опционально)
         end_date: Конечная дата (опционально)
+        batch_size: Размер пакета для commit (по умолчанию 100)
         
     Returns:
         Dict: Статистика выполнения
@@ -525,37 +452,69 @@ def convert_sales_to_orders(
         from utils.order_from_sales import convert_sales_to_orders
         
         db = next(get_db())
-        stats = convert_sales_to_orders(db)
+        stats = convert_sales_to_orders(db, batch_size=100)
         
         # Или за период:
         from datetime import datetime
         stats = convert_sales_to_orders(
             db,
             start_date=datetime(2024, 1, 1),
-            end_date=datetime(2024, 1, 31)
+            end_date=datetime(2024, 1, 31),
+            batch_size=100
         )
     """
     converter = OrderFromSalesConverter(db)
     
     if start_date and end_date:
-        return converter.convert_sales_by_date_range(start_date, end_date)
+        return converter.convert_sales_by_date_range(start_date, end_date, batch_size)
     else:
-        return converter.convert_all_sales()
+        return converter.convert_all_sales(batch_size)
 
 
 # Вспомогательная функция для использования из командной строки
 if __name__ == "__main__":
+    import time
     from database.database import SessionLocal
     
-    print("🚀 Запуск конвертации Sales -> Orders")
-    print("="*60)
+    print("=" * 80)
+    print("ОПТИМИЗИРОВАННАЯ КОНВЕРТАЦИЯ SALES -> ORDERS")
+    print("=" * 80)
+    print("\nОсобенности:")
+    print("✓ Один SQL-запрос с GROUP BY для получения всех данных")
+    print("✓ Batch операции (commit каждые 100 записей)")
+    print("✓ Суммирование dish_sum_int и dish_discount_sum_int на уровне БД")
+    print("✓ JOIN с order_types для получения типов заказов")
+    print("✓ JSON агрегация для customer, payments, discounts, external_data")
+    print("✓ Создаются только d_orders (t_orders можно создать отдельно)")
+    print()
     
     db = SessionLocal()
+    start_time = time.time()
+    
     try:
-        stats = convert_sales_to_orders(db)
-        print(f"\n✅ Конвертация завершена успешно!")
+        stats = convert_sales_to_orders(db, batch_size=100)
+        elapsed_time = time.time() - start_time
+        
+        print("\n" + "=" * 80)
+        print("ИТОГОВАЯ СТАТИСТИКА")
+        print("=" * 80)
+        print(f"⏱️  Время выполнения:        {elapsed_time:.2f} секунд")
+        print(f"✅ Обработано заказов:      {stats['processed_orders']}")
+        print(f"🆕 Создано заказов:         {stats['created_orders']}")
+        print(f"♻️  Обновлено заказов:       {stats['updated_orders']}")
+        print(f"⏭️  Пропущено заказов:       {stats['skipped_orders']}")
+        
+        if stats['errors']:
+            print(f"\n❌ Ошибок: {len(stats['errors'])}")
+        else:
+            print("\n✨ Конвертация завершена без ошибок!")
+        
+        print("=" * 80)
+        
     except Exception as e:
         print(f"\n❌ Критическая ошибка: {str(e)}")
+        import traceback
+        traceback.print_exc()
         db.rollback()
     finally:
         db.close()

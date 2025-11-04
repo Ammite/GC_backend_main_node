@@ -71,6 +71,13 @@ def get_profit_loss_report(
     
     # 3. Получаем комиссии банка (из d_order.bank_commission)
     bank_commission = get_bank_commission_total(db, start_date, end_date, organization_id)
+    expenses_by_type.append(
+        ExpenseByType(
+            transaction_type="EXPENSES",
+            transaction_name="Комиссия банков (в)",
+            amount=bank_commission
+        )
+    )
     
     logger.info(f"Bank commission: {bank_commission}")
     
