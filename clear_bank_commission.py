@@ -32,12 +32,16 @@ def clear_bank_commission(dry_run=True):
         # Получаем все записи с непустым bank_commission в d_order
         orders_with_commission = session.query(DOrder).filter(
             DOrder.bank_commission.isnot(None),
-            DOrder.bank_commission != 0
+            DOrder.bank_commission != 0,
+            DOrder.time_order >= '2025-10-1 00:00:00',
+            DOrder.time_order < '2025-10-20 23:59:59'
         ).all()
         
         # Получаем все записи с непустыми связями в bank_commission
         commissions_with_links = session.query(BankCommission).filter(
-            BankCommission.order_id.isnot(None)
+            BankCommission.order_id.isnot(None),
+            BankCommission.time_transaction >= '2025-10-1 00:00:00',
+            BankCommission.time_transaction < '2025-10-20 23:59:59',
         ).all()
         
         total_orders_count = len(orders_with_commission)
@@ -136,7 +140,9 @@ def show_statistics():
         total_orders = session.query(DOrder).count()
         orders_with_commission = session.query(DOrder).filter(
             DOrder.bank_commission.isnot(None),
-            DOrder.bank_commission != 0
+            DOrder.bank_commission != 0,
+            DOrder.time_order >= '2025-10-1 00:00:00',
+            DOrder.time_order < '2025-10-20 23:59:59'
         ).count()
         orders_with_null_commission = session.query(DOrder).filter(
             DOrder.bank_commission.is_(None)
@@ -148,7 +154,9 @@ def show_statistics():
         # Статистика по комиссиям
         total_commissions = session.query(BankCommission).count()
         commissions_with_links = session.query(BankCommission).filter(
-            BankCommission.order_id.isnot(None)
+            BankCommission.order_id.isnot(None),
+            BankCommission.time_transaction >= '2025-10-1 00:00:00',
+            BankCommission.time_transaction < '2025-10-20 23:59:59'
         ).count()
         commissions_without_links = session.query(BankCommission).filter(
             BankCommission.order_id.is_(None)
@@ -173,7 +181,9 @@ def show_statistics():
             print("\nExamples of orders with commission:")
             examples = session.query(DOrder).filter(
                 DOrder.bank_commission.isnot(None),
-                DOrder.bank_commission != 0
+                DOrder.bank_commission != 0,
+                DOrder.time_order >= '2025-10-1 00:00:00',
+                DOrder.time_order < '2025-10-20 23:59:59'
             ).limit(3).all()
             
             for i, order in enumerate(examples, 1):
@@ -183,7 +193,9 @@ def show_statistics():
             # Показываем примеры комиссий со связями
             print("\nExamples of commissions with order links:")
             examples = session.query(BankCommission).filter(
-                BankCommission.order_id.isnot(None)
+                BankCommission.order_id.isnot(None),
+                BankCommission.time_transaction >= '2025-10-1 00:00:00',
+                BankCommission.time_transaction < '2025-10-20 23:59:59'
             ).limit(3).all()
             
             for i, commission in enumerate(examples, 1):

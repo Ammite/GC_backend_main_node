@@ -290,17 +290,22 @@ def normalize_transaction_data(raw_data: List[Dict[str, Any]]) -> List[Dict[str,
                 if field in transaction and transaction[field]:
                     try:
                         commission = float(transaction[field])
-                        total_commission += abs(commission)  # Берем по модулю
+                        total_commission += commission  # СОХРАНЯЕМ ЗНАК! Он важен для направления операции
                     except (ValueError, TypeError):
                         try:
-                            clean_value = ''.join(c for c in str(transaction[field]) if c.isdigit() or c in '.,')
+                            # Сохраняем знак минус если он есть
+                            str_value = str(transaction[field])
+                            is_negative = str_value.strip().startswith('-')
+                            clean_value = ''.join(c for c in str_value if c.isdigit() or c in '.,')
                             if clean_value:
                                 commission = float(clean_value.replace(',', '.'))
-                                total_commission += abs(commission)
+                                if is_negative:
+                                    commission = -commission
+                                total_commission += commission
                         except:
                             pass
             
-            if total_commission > 0:
+            if total_commission != 0:  # Сохраняем и положительные, и отрицательные комиссии
                 normalized_transaction["commission"] = total_commission
             
             # Если комиссия не найдена, но есть сумма операции и сумма к зачислению
@@ -318,7 +323,7 @@ def normalize_transaction_data(raw_data: List[Dict[str, Any]]) -> List[Dict[str,
                                 credit_amount = float(transaction[field])
                                 commission = amount - credit_amount
                                 if commission != 0:
-                                    normalized_transaction["commission"] = abs(commission)
+                                    normalized_transaction["commission"] = commission  # СОХРАНЯЕМ ЗНАК!
                                 break
                             except (ValueError, TypeError):
                                 pass
@@ -411,12 +416,17 @@ def create_bank_commission(transactions: list[dict]) -> bool:
                 organization_id = organization.id
         
         date_and_time = datetime.strptime(transaction['date'], '%Y-%m-%d %H:%M:%S')
+        
+        # Сохраняем только имя файла, а не полный путь (для соответствия ограничению VARCHAR(100))
+        file_path = transaction.get('file_path', '')
+        source_filename = os.path.basename(file_path) if file_path else ''
+        
         bank_commission = BankCommission(
             amount=transaction['amount'],
             bank_commission=transaction['commission'],
             organization_id=organization_id,
             time_transaction=date_and_time,
-            source=transaction['file_path'],
+            source=source_filename,
         )
         session.add(bank_commission)
     session.commit()

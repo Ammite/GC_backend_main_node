@@ -96,6 +96,10 @@ def find_matching_commissions_and_sales(session):
                 public.d_orders d
             WHERE 
                 d.iiko_id = ANY(string_to_array(s.order_ids, ', '))
+                and c.time_transaction >= '2025-10-1 00:00:00'
+                and c.time_transaction < '2025-10-20 23:59:59'
+                and c.bank_commission is not null
+                and c.source = 'temp_files/terminals_report/ИП Амиржан Каспий.xlsx'
         ) o ON true
         ORDER BY s.payment_id ASC
     """)
