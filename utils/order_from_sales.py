@@ -299,7 +299,7 @@ class OrderFromSalesConverter:
             .first()
         
         if existing_order:
-            return
+            # return
             # Обновляем существующий заказ
             self._update_existing_order(existing_order, sale_data)
             self.stats["updated_orders"] += 1

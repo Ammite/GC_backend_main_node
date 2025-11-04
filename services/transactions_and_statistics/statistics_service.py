@@ -347,8 +347,8 @@ def get_revenue_by_category(
     """
     # Базовый фильтр для всех запросов
     base_filter = and_(
-        Sales.open_date_typed >= start_date,
-        Sales.open_date_typed < end_date,
+        Sales.open_time >= start_date,
+        Sales.open_time < end_date,
         Sales.cashier != 'Удаление позиций',
         Sales.order_deleted != 'DELETED'
     )
@@ -505,6 +505,14 @@ def get_bank_commission_total(
     Returns:
         Сумма комиссий банка
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"🔍 get_bank_commission_total called with:")
+    logger.info(f"   start_date: {start_date}")
+    logger.info(f"   end_date: {end_date}")
+    logger.info(f"   organization_id: {organization_id}")
+    
     commission_query = db.query(
         func.sum(BankCommission.bank_commission)
     ).filter(
@@ -518,7 +526,24 @@ def get_bank_commission_total(
     if organization_id:
         commission_query = commission_query.filter(BankCommission.organization_id == organization_id)
     
-    return float(commission_query.scalar() or 0)
+    # Для отладки - считаем количество записей
+    count_query = db.query(func.count(BankCommission.id)).filter(
+        and_(
+            BankCommission.time_transaction >= start_date,
+            BankCommission.time_transaction < end_date,
+            BankCommission.bank_commission.isnot(None)
+        )
+    )
+    if organization_id:
+        count_query = count_query.filter(BankCommission.organization_id == organization_id)
+    
+    records_count = count_query.scalar()
+    result = float(commission_query.scalar() or 0)
+    
+    logger.info(f"   📊 Found {records_count} commission records")
+    logger.info(f"   💰 Total commission: {result}")
+    
+    return result
 
 
 def get_total_discount_from_orders(
@@ -843,7 +868,7 @@ def get_expenses_from_transactions(
         Словарь с структурированными данными о расходах
     """
     if expense_types is None:
-        expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY', 'DEBTS_OF_EMPLOYEES']
+        expense_types = ['EXPENSES']
     
     # Шаг 1: Получаем аккаунты с нужными типами
     accounts = db.query(Account).filter(

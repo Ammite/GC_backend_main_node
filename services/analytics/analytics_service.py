@@ -193,7 +193,7 @@ def get_expenses_analytics(
     start_date, end_date, _, _ = get_period_dates(target_date, period)
     
     # Получаем расходы из транзакций
-    expense_types = ['EXPENSES', 'EQUITY', 'EMPLOYEES_LIABILITY']
+    expense_types = ['EXPENSES']
     result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
     
     return ExpensesAnalyticsResponse(

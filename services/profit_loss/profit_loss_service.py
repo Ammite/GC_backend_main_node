@@ -39,7 +39,11 @@ def get_profit_loss_report(
     target_date = parse_date(date)
     start_date, end_date, _, _ = get_period_dates(target_date, period)
     
-    logger.info(f"Generating P&L report for period {start_date} - {end_date}")
+    logger.info(f"🔥 Generating P&L report for period {start_date} - {end_date}")
+    logger.info(f"   📅 Input date: {date}")
+    logger.info(f"   📆 Target date: {target_date}")
+    logger.info(f"   ⏱️ Period: {period}")
+    logger.info(f"   🏢 Organization ID: {organization_id}")
     
     # 1. Получаем доходы по категориям (из Sales, поле dish_discount_sum_int)
     revenue_data = get_revenue_by_category(db, start_date, end_date, organization_id)
@@ -70,7 +74,10 @@ def get_profit_loss_report(
     logger.info(f"Total expenses: {total_expenses}")
     
     # 3. Получаем комиссии банка (из d_order.bank_commission)
+    logger.info(f"📞 Calling get_bank_commission_total with: start={start_date}, end={end_date}, org={organization_id}")
     bank_commission = get_bank_commission_total(db, start_date, end_date, organization_id)
+    logger.info(f"💰 Bank commission returned: {bank_commission}")
+    
     expenses_by_type.append(
         ExpenseByType(
             transaction_type="EXPENSES",
