@@ -20,7 +20,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token(
         data={"sub": user.login},
-        expires_delta=timedelta(minutes=300),
+        expires_delta=timedelta(days=5),
     )
 
     # Берём первую роль пользователя (если их несколько) для ответа
@@ -49,7 +49,7 @@ def register(request: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token(
         data={"sub": new_user.login},
-        expires_delta=timedelta(minutes=300),
+        expires_delta=timedelta(days=5),
     )
 
     
