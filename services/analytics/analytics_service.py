@@ -85,13 +85,17 @@ def get_analytics(
         )
     ]
     
-    # Формируем отчеты (расходы/доходы)
-    # TODO: Добавить реальные данные о расходах из соответствующих таблиц
+    # Получаем реальные данные о расходах из транзакций
+    expense_types = ['EXPENSES']
+    expenses_result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
+    total_expenses = expenses_result['expenses_amount']
+    
+    # Формируем отчеты (расходы)
     reports = [
         Report(
             id=1,
             title="Итого Расходы",
-            value=f"+{format_currency(current_revenue * 0.7)}",  # Примерно 70% от выручки
+            value=f"-{format_currency(total_expenses)}",  # Реальные расходы из транзакций
             date=target_date.strftime("%d.%m"),
             type="expense"
         )

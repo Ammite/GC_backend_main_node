@@ -130,3 +130,24 @@ class MoneyFlowResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class DailySalesData(BaseModel):
+    """Данные продаж за один день"""
+    date: str  # Дата в формате DD.MM.YYYY
+    revenue: float  # Выручка
+    checks_count: int  # Количество чеков
+    average_check: float  # Средний чек
+
+
+class SalesDynamicsResponse(BaseModel):
+    """Динамика продаж за период"""
+    success: bool
+    message: str
+    total_revenue: float  # Общая выручка за период
+    total_checks: int  # Общее количество чеков за период
+    overall_average_check: float  # Общий средний чек за период
+    daily_data: List[DailySalesData]  # Данные по дням
+
+    class Config:
+        from_attributes = True
+
