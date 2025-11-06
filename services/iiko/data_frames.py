@@ -108,11 +108,13 @@ iiko_transactions_data_frame = {
         "Sum.ResignedSum"
     ],
     "filters": {
-        "DateTime.Typed": {
+        "DateTime.DateTyped": {
             "filterType": "DateRange",
             "periodType": "CUSTOM",
-            "from": "2025-09-29T00:00:00.000",
-            "to": "2025-09-30T00:00:00.000"
+            "from": "2025-09-29",
+            "to": "2025-09-30",
+            "includeLow": True,
+            "includeHigh": False
         }
     }
 }
@@ -393,8 +395,10 @@ iiko_sales_data_frame = {
         "OpenDate.Typed": {
             "filterType": "DateRange",
             "periodType": "CUSTOM",
-            "from": "2025-09-29T00:00:00.000",
-            "to": "2025-09-30T00:00:00.000"
+            "from": "2025-09-29",
+            "to": "2025-09-30",
+            "includeLow": True,
+            "includeHigh": False
         }
     }
 }

@@ -377,18 +377,39 @@ async def sync_transactions(
             "errors": 0,
             "didnt_find_unique_key": 0
         }
-        from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-        to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-        while from_date < to_date:
-            temp_to_date = from_date + timedelta(days=1)
-            if temp_to_date > to_date:
-                temp_to_date = to_date
-            sync_result = await iiko_sync.sync_transactions(db, from_date, temp_to_date)
+        
+        # Преобразуем в datetime для работы
+        from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        
+        # Работаем по дням, чтобы избежать накладывания
+        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
+        current_date = from_dt.date()
+        end_date = to_dt.date()
+        
+        while current_date < end_date:
+            # Для получения данных за один день передаем:
+            # from = текущий день, to = следующий день
+            # Например: from="2025-10-01", to="2025-10-02" → данные только за 1 октября
+            day_from = datetime.combine(current_date, datetime.min.time())
+            day_to = datetime.combine(current_date + timedelta(days=1), datetime.min.time())
+            
+            logger.info(f"Синхронизация транзакций за {current_date.strftime('%Y-%m-%d')}...")
+            
+            sync_result = await iiko_sync.sync_transactions(db, day_from, day_to)
             result["created"] += sync_result.get("created", 0)
             result["updated"] += sync_result.get("updated", 0)
             result["errors"] += sync_result.get("errors", 0)
             result["didnt_find_unique_key"] += sync_result.get("didnt_find_unique_key", 0)
-            from_date = temp_to_date
+            
+            logger.info(
+                f"День {current_date.strftime('%Y-%m-%d')}: создано {sync_result.get('created', 0)}, "
+                f"обновлено {sync_result.get('updated', 0)}, "
+                f"ошибок {sync_result.get('errors', 0)}"
+            )
+            
+            # Переходим к следующему дню
+            current_date += timedelta(days=1)
         
         return {
             "success": True,
@@ -425,19 +446,41 @@ async def sync_sales(
         result = {
             "created": 0,
             "updated": 0,
-            "errors": 0
+            "errors": 0,
+            "skipped_duplicates": 0
         }
-        from_date = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-        to_date = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-        while from_date < to_date:
-            temp_to_date = from_date + timedelta(days=1)
-            if temp_to_date > to_date:
-                temp_to_date = to_date
-            sync_result = await iiko_sync.sync_sales(db, from_date, temp_to_date)
+        # Преобразуем в datetime для работы
+        from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
+        to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
+        
+        # Работаем по дням, чтобы избежать накладывания
+        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
+        current_date = from_dt.date()
+        end_date = to_dt.date()
+        
+        while current_date < end_date:
+            # Для получения данных за один день передаем:
+            # from = текущий день, to = следующий день
+            # Например: from="2025-10-01", to="2025-10-02" → данные только за 1 октября
+            day_from = datetime.combine(current_date, datetime.min.time())
+            day_to = datetime.combine(current_date + timedelta(days=1), datetime.min.time())
+            
+            logger.info(f"Синхронизация продаж за {current_date.strftime('%Y-%m-%d')}...")
+            
+            sync_result = await iiko_sync.sync_sales(db, day_from, day_to)
             result["created"] += sync_result.get("created", 0)
             result["updated"] += sync_result.get("updated", 0)
             result["errors"] += sync_result.get("errors", 0)
-            from_date = temp_to_date
+            result["skipped_duplicates"] = result.get("skipped_duplicates", 0) + sync_result.get("skipped_duplicates", 0)
+            
+            logger.info(
+                f"День {current_date.strftime('%Y-%m-%d')}: создано {sync_result.get('created', 0)}, "
+                f"пропущено дубликатов {sync_result.get('skipped_duplicates', 0)}, "
+                f"ошибок {sync_result.get('errors', 0)}"
+            )
+            
+            # Переходим к следующему дню
+            current_date += timedelta(days=1)
         
         # Инвалидируем кэш отчетов и аналитики
         invalidate_cache("reports")
