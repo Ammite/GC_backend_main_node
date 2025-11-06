@@ -415,6 +415,17 @@ def get_revenue_by_category(
         other_query = other_query.filter(Sales.organization_id == organization_id)
     
     other_data = other_query.first()
+
+    # Дополнительная выручка
+    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.account_name == 'Задолженность перед поставщиками',
+            Transaction.contr_account_type == 'INCOME',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0
+    
     other_base = float(other_data.sum_base or 0)
     other_discount = float(other_data.sum_discount or 0)
     other_increase = float(other_data.sum_increase or 0)
@@ -424,13 +435,14 @@ def get_revenue_by_category(
     total_increase = kitchen_increase + bar_increase + other_increase
     
     # Общая выручка
-    total_revenue = kitchen_revenue + bar_revenue + other_revenue
+    total_revenue = kitchen_revenue + bar_revenue + other_revenue + additional_revenue
     
     return {
         "Кухня": kitchen_base,
         "Бар": bar_base,
         "Прочее": other_revenue,
         "Наценка (обслуживание)": total_increase,
+        "Дополнительная выручка": additional_revenue,
         "total": total_revenue
     }
 
@@ -890,7 +902,8 @@ def get_expenses_from_transactions(
         Transaction.account_id.in_(account_iiko_ids),
         Transaction.date_time >= start_date,
         Transaction.date_time <= end_date,
-        Transaction.is_active == True
+        Transaction.is_active == True,
+        Transaction.transaction_side == 'CREDIT'
     )
     
     # Фильтруем по организации если указана
