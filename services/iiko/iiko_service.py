@@ -765,11 +765,13 @@ class IikoService:
         """Получение транзакций (Server API) для заданного периода"""
         
         params = data_frames.iiko_transactions_data_frame.copy()
-        params["filters"]["DateTime.Typed"]["from"] = from_date.isoformat()
-        params["filters"]["DateTime.Typed"]["to"] = to_date.isoformat()
+        # Форматируем даты в YYYY-MM-DD (без времени)
+        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
+        params["filters"]["DateTime.DateTyped"]["from"] = from_date.strftime('%Y-%m-%d')
+        params["filters"]["DateTime.DateTyped"]["to"] = to_date.strftime('%Y-%m-%d')
         result = await self.get_server_transactions_report(params)
         if result and "data" in result:
-            logger.info(f"Получено транзакций за период с {from_date.isoformat()} по {to_date.isoformat()}: {len(result['data'])}")
+            logger.info(f"Получено транзакций за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}: {len(result['data'])}")
             return result["data"]
         return None
 
@@ -777,12 +779,14 @@ class IikoService:
         """Получение продаж (Server API) для заданного периода"""
 
         params = data_frames.iiko_sales_data_frame.copy()
-        params["filters"]["OpenDate.Typed"]["from"] = from_date.isoformat()
-        params["filters"]["OpenDate.Typed"]["to"] = to_date.isoformat()
+        # Форматируем даты в YYYY-MM-DD (без времени)
+        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
+        params["filters"]["OpenDate.Typed"]["from"] = from_date.strftime('%Y-%m-%d')
+        params["filters"]["OpenDate.Typed"]["to"] = to_date.strftime('%Y-%m-%d')
         result = await self.get_server_sales_report(params)
         
         if result and "data" in result:
-            logger.info(f"Получено продаж за период с {from_date.isoformat()} по {to_date.isoformat()}: {len(result['data'])}")
+            logger.info(f"Получено продаж за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}: {len(result['data'])}")
             return result["data"]
         return None
 

@@ -28,3 +28,4 @@ temp_files/*
 reports/*
 logs/*
 migrations/*
+dupes*.json

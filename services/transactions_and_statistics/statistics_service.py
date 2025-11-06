@@ -182,8 +182,8 @@ def get_returns_sum_from_sales(
         Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF',
         Sales.cashier != 'Удаление позиций',
         Sales.order_deleted != 'DELETED',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
+        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
+        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
     )
     
     if organization_id:
@@ -259,8 +259,8 @@ def get_writeoffs_sum_from_sales(
     sales_query = db.query(Sales).filter(
         Sales.deleted_with_writeoff == 'DELETED_WITH_WRITEOFF',
         Sales.cashier != 'Удаление позиций',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
+        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
+        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
     )
     
     if organization_id:
@@ -291,8 +291,8 @@ def get_writeoffs_details_from_sales(
     sales_query = db.query(Sales).filter(
         Sales.deleted_with_writeoff == 'DELETED_WITH_WRITEOFF',
         Sales.cashier != 'Удаление позиций',
-        Sales.open_time >= start_date,
-        Sales.open_time <= end_date,
+        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
+        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
     )
     
     if organization_id:
@@ -347,8 +347,8 @@ def get_revenue_by_category(
     """
     # Базовый фильтр для всех запросов
     base_filter = and_(
-        Sales.open_time >= start_date,
-        Sales.open_time < end_date,
+        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
+        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
         Sales.cashier != 'Удаление позиций',
         Sales.order_deleted != 'DELETED'
     )
@@ -824,8 +824,8 @@ def get_top_employees_by_revenue(
         Employees, Sales.order_waiter_id == Employees.iiko_id
     ).filter(
         and_(
-            Sales.open_time >= start_date,
-            Sales.open_time <= end_date,
+            Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
+            Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
             Sales.cashier != 'Удаление позиций',
             Sales.order_deleted != 'DELETED'
         )

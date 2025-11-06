@@ -1121,24 +1121,150 @@ class IikoSync:
             db.rollback()
             return {"created": 0, "updated": 0, "errors": 1}
 
+    def _normalize_value_for_key(self, value: Any) -> Any:
+        """Нормализует значение для использования в уникальном ключе"""
+        if value is None:
+            return None
+        
+        # Datetime преобразуем в ISO строку без микросекунд
+        if isinstance(value, datetime):
+            return value.replace(microsecond=0, tzinfo=None).isoformat()
+        
+        # Строку datetime тоже нормализуем
+        if isinstance(value, str):
+            # Пытаемся распарсить как datetime и нормализовать
+            try:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                return dt.replace(microsecond=0, tzinfo=None).isoformat()
+            except:
+                # Если не datetime, возвращаем как есть
+                return value
+        
+        # Числовые значения
+        if isinstance(value, (int, float)):
+            if isinstance(value, int) or value == int(value):
+                return int(value)
+            return round(float(value), 2)
+        
+        # Decimal из SQLAlchemy
+        from decimal import Decimal
+        if isinstance(value, Decimal):
+            float_val = float(value)
+            if float_val == int(float_val):
+                return int(float_val)
+            return round(float_val, 2)
+        
+        # Все остальное возвращаем как есть
+        return value
+    
+    def _create_sale_unique_key(self, sale_data: Dict[str, Any]) -> tuple:
+        """
+        Создает уникальный ключ для продажи из ВСЕХ значимых полей
+        (кроме id, created_at, updated_at, is_active, commission)
+        """
+        # Список полей для ИСКЛЮЧЕНИЯ из ключа
+        exclude_fields = {'id', 'created_at', 'updated_at', 'is_active', 'commission'}
+        
+        # Получаем все поля модели Sales
+        all_fields = [column.name for column in Sales.__table__.columns if column.name not in exclude_fields]
+        
+        # Создаем tuple из нормализованных значений ВСЕХ полей
+        key_values = []
+        for field in sorted(all_fields):  # sorted для стабильного порядка
+            value = sale_data.get(field)
+            normalized_value = self._normalize_value_for_key(value)
+            key_values.append(normalized_value)
+        
+        return tuple(key_values)
+
     async def sync_sales(self, db: Session, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Dict[str, int]:
-        """Синхронизация продаж"""  
+        """Синхронизация продаж с проверкой на дубликаты (оптимизированная версия)"""  
         try:
             sales_data = await self.service.get_sales(from_date, to_date)
             
             if not sales_data:
                 logger.warning("Не удалось получить данные продаж")
-                return {"created": 0, "updated": 0, "errors": 0}
+                return {"created": 0, "updated": 0, "errors": 0, "skipped_duplicates": 0}
             
             parsed_data = self.parser.parse_sales(sales_data)
             
             if not parsed_data:
                 logger.warning("Нет данных для синхронизации продаж")
-                return {"created": 0, "updated": 0, "errors": 0}
+                return {"created": 0, "updated": 0, "errors": 0, "skipped_duplicates": 0}
+            
+            # Получаем количество полей для логирования
+            exclude_fields = {'id', 'created_at', 'updated_at', 'is_active', 'commission'}
+            total_fields = len([c.name for c in Sales.__table__.columns if c.name not in exclude_fields])
+            logger.info(f"Загрузка существующих продаж за период для проверки дубликатов (используется {total_fields} полей)...")
+            
+            # ОПТИМИЗАЦИЯ: Загружаем все существующие продажи за период одним запросом
+            # Определяем временной диапазон из parsed_data
+            open_times = []
+            for s in parsed_data:
+                ot = s.get("open_time")
+                if ot:
+                    # Преобразуем строку в datetime, если это строка
+                    if isinstance(ot, str):
+                        try:
+                            ot = datetime.fromisoformat(ot.replace('Z', '+00:00'))
+                        except Exception as e:
+                            logger.warning(f"Не удалось преобразовать open_time '{ot}' в datetime: {e}")
+                            continue
+                    if isinstance(ot, datetime):
+                        open_times.append(ot)
+            
+            if open_times:
+                min_open_time = min(open_times)
+                max_open_time = max(open_times)
+                
+                # Загружаем существующие записи за период с запасом ±1 день
+                existing_sales_query = db.query(Sales).filter(
+                    Sales.open_time.between(
+                        min_open_time - timedelta(days=1),
+                        max_open_time + timedelta(days=1)
+                    )
+                )
+                existing_sales = existing_sales_query.all()
+                
+                # Создаем set из уникальных ключей существующих записей
+                existing_keys = set()
+                for sale in existing_sales:
+                    sale_dict = {
+                        "item_sale_event_id": sale.item_sale_event_id,
+                        "organization_id": sale.organization_id,
+                        "order_id": sale.order_id,
+                        "open_time": sale.open_time,
+                        "close_time": sale.close_time,
+                        "precheque_time": sale.precheque_time,
+                        "dish_id": sale.dish_id,
+                        "dish_amount_int": sale.dish_amount_int,
+                        "dish_sum_int": sale.dish_sum_int,
+                        "dish_return_sum": sale.dish_return_sum,
+                        "dish_discount_sum_int": sale.dish_discount_sum_int,
+                        "increase_sum": sale.increase_sum,
+                        "discount_sum": sale.discount_sum,
+                        "full_sum": sale.full_sum,
+                        "session_id": sale.session_id,
+                        "table_num": sale.table_num,
+                        "waiter_name_id": sale.waiter_name_id,
+                        "order_waiter_id": sale.order_waiter_id,
+                        "cashier_id": sale.cashier_id,
+                        "cooking_place_id": sale.cooking_place_id,
+                        "payment_transaction_ids": sale.payment_transaction_ids,
+                        "payment_transaction_id": sale.payment_transaction_id
+                    }
+                    key = self._create_sale_unique_key(sale_dict)
+                    existing_keys.add(key)
+                
+                logger.info(f"Загружено {len(existing_sales)} существующих записей продаж для проверки")
+            else:
+                existing_keys = set()
+                logger.info("Нет временных меток для оптимизации, проверка будет полной")
             
             created = 0
             updated = 0
             errors = 0
+            skipped_duplicates = 0
             
             for sale_data in parsed_data:
                 try:
@@ -1155,12 +1281,27 @@ class IikoSync:
                     # Добавляем organization_id в данные
                     sale_data["organization_id"] = organization_id
                     
-                    # Всегда создаем новую запись продажи
-                    sale_data["created_at"] = datetime.now()
-                    sale_data["updated_at"] = datetime.now()
-                    new_sale = Sales(**sale_data)
-                    db.add(new_sale)
-                    created += 1
+                    # Создаем уникальный ключ для новой записи
+                    new_key = self._create_sale_unique_key(sale_data)
+                    
+                    # Проверяем существование в set (O(1) - очень быстро!)
+                    if new_key in existing_keys:
+                        # Запись уже существует - пропускаем
+                        skipped_duplicates += 1
+                        logger.debug(
+                            f"Пропущен дубликат продажи: item_sale_event_id={sale_data.get('item_sale_event_id')}, "
+                            f"order_id={sale_data.get('order_id')}, dish_id={sale_data.get('dish_id')}, "
+                            f"open_time={sale_data.get('open_time')}, full_sum={sale_data.get('full_sum')}"
+                        )
+                    else:
+                        # Создаем новую запись продажи
+                        sale_data["created_at"] = datetime.now()
+                        sale_data["updated_at"] = datetime.now()
+                        new_sale = Sales(**sale_data)
+                        db.add(new_sale)
+                        # Добавляем ключ в set, чтобы избежать дубликатов в текущей партии
+                        existing_keys.add(new_key)
+                        created += 1
                         
                 except Exception as e:
                     logger.error(f"Ошибка синхронизации продажи {sale_data.get('item_sale_event_id', 'Unknown')}: {e}")
@@ -1168,13 +1309,13 @@ class IikoSync:
                     errors += 1
             
             db.commit()
-            logger.info(f"Синхронизация продаж завершена: создано {created}, ошибок {errors}")
-            return {"created": created, "updated": 0, "errors": errors}
+            logger.info(f"Синхронизация продаж завершена: создано {created}, пропущено дубликатов {skipped_duplicates}, ошибок {errors}")
+            return {"created": created, "updated": 0, "errors": errors, "skipped_duplicates": skipped_duplicates}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации продаж: {e}")
             db.rollback()
-            return {"created": 0, "updated": 0, "errors": 1}
+            return {"created": 0, "updated": 0, "errors": 1, "skipped_duplicates": 0}
 
     async def sync_accounts(self, db: Session) -> Dict[str, int]:
         """Синхронизация счетов (accounts) из Server API"""
