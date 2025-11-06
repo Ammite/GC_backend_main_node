@@ -222,11 +222,9 @@ def get_cost_of_goods_from_sales(
         and_(
             Sales.open_date_typed >= start_date_only,
             Sales.open_date_typed <= end_date_only,
-            Sales.cashier != 'Удаление позиций',
-            Sales.order_deleted != 'DELETED',
-            Sales.dish_amount_int.isnot(None),
-            Sales.product_cost_base_product_cost.isnot(None),
-            Sales.product_cost_base_product_cost > 0
+            Sales.deleted_with_writeoff != 'DELETED_WITHOUT_WRITEOFF',
+            Sales.dish_amount_int > 0,
+            Sales.order_deleted != 'DELETED'
         )
     )
     
