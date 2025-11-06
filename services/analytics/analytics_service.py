@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_
 from typing import Optional
 from utils.cache import cached
 from schemas.analytics import (
@@ -26,6 +27,7 @@ from services.transactions_and_statistics.statistics_service import (
     get_top_employees_by_revenue,
     get_expenses_from_transactions
 )
+from models.transaction import Transaction
 
 
 # @cached(ttl_seconds=300, key_prefix="analytics")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
@@ -58,6 +60,30 @@ def get_analytics(
     # Считаем метрики
     current_revenue = calculate_revenue_from_orders(orders, use_discount=True)
     previous_revenue = calculate_revenue_from_orders(previous_orders, use_discount=True)
+    
+    # Дополнительная выручка для текущего периода
+    additional_revenue_current = db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.account_name == 'Задолженность перед поставщиками',
+            Transaction.contr_account_type == 'INCOME',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0
+    
+    # Дополнительная выручка для предыдущего периода
+    additional_revenue_previous = db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.account_name == 'Задолженность перед поставщиками',
+            Transaction.contr_account_type == 'INCOME',
+            Transaction.date_typed >= previous_start,
+            Transaction.date_typed <= previous_end
+        )
+    ).scalar() or 0
+    
+    # Добавляем дополнительную выручку к общей
+    current_revenue += float(additional_revenue_current)
+    previous_revenue += float(additional_revenue_previous)
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)

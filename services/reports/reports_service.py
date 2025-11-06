@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func, and_
 from typing import Optional
 from utils.cache import cached
 from schemas.reports import (
@@ -41,6 +42,7 @@ from services.transactions_and_statistics.statistics_service import (
     get_revenue_by_menu_category_and_payment,
     get_bank_commission_total
 )
+from models.transaction import Transaction
 
 
 # @cached(ttl_seconds=300, key_prefix="reports_orders")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
@@ -247,6 +249,18 @@ def get_moneyflow_reports(
         
         incomes_sum += amount
     
+    # Дополнительная выручка
+    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.account_name == 'Задолженность перед поставщиками',
+            Transaction.contr_account_type == 'INCOME',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0
+    
+    incomes_sum += float(additional_revenue)
+    
     # Формируем массив доходов по категориям
     income_by_category = []
     for idx, (category, amount) in enumerate(sorted(category_totals.items(), key=lambda x: x[1], reverse=True), start=1):
@@ -341,7 +355,6 @@ def get_sales_dynamics(
         Динамика продаж с разбивкой по дням
     """
     from datetime import datetime, timedelta
-    from sqlalchemy import func, and_
     from models.sales import Sales
     
     # Определяем период: сегодня минус N дней
@@ -392,6 +405,18 @@ def get_sales_dynamics(
         
         total_revenue += day_revenue
         total_checks += day_checks
+    
+    # Дополнительная выручка за весь период
+    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.account_name == 'Задолженность перед поставщиками',
+            Transaction.contr_account_type == 'INCOME',
+            Transaction.date_typed >= datetime.combine(start_date, datetime.min.time()),
+            Transaction.date_typed <= datetime.combine(end_date, datetime.max.time())
+        )
+    ).scalar() or 0
+    
+    total_revenue += float(additional_revenue)
     
     overall_average_check = total_revenue / total_checks if total_checks > 0 else 0
     
