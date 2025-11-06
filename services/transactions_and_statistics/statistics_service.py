@@ -417,14 +417,14 @@ def get_revenue_by_category(
     other_data = other_query.first()
 
     # Дополнительная выручка
-    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
-        and_(
-            Transaction.account_name == 'Задолженность перед поставщиками',
-            Transaction.contr_account_type == 'INCOME',
-            Transaction.date_typed >= start_date,
-            Transaction.date_typed <= end_date
-        )
-    ).scalar() or 0)
+    # additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
+    #     and_(
+    #         Transaction.account_name == 'Задолженность перед поставщиками',
+    #         Transaction.contr_account_type == 'INCOME',
+    #         Transaction.date_typed >= start_date,
+    #         Transaction.date_typed <= end_date
+    #     )
+    # ).scalar() or 0)
     
     other_base = float(other_data.sum_base or 0)
     other_discount = float(other_data.sum_discount or 0)
@@ -435,14 +435,14 @@ def get_revenue_by_category(
     total_increase = kitchen_increase + bar_increase + other_increase
     
     # Общая выручка
-    total_revenue = kitchen_revenue + bar_revenue + other_revenue + additional_revenue
+    total_revenue = kitchen_revenue + bar_revenue + other_revenue 
     
     return {
         "Кухня": kitchen_base,
         "Бар": bar_base,
         "Прочее": other_revenue,
         "Наценка (обслуживание)": total_increase,
-        "Дополнительная выручка": additional_revenue,
+        # "Дополнительная выручка": additional_revenue,
         "total": total_revenue
     }
 
