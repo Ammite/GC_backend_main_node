@@ -889,7 +889,7 @@ def get_expenses_from_transactions(
     ).all()
     
     # Шаг 2: Извлекаем iiko_id из аккаунтов
-    account_iiko_ids = [account.iiko_id for account in accounts]
+    account_iiko_ids = [account.iiko_id for account in accounts if account.name != 'Зарплата']
     
     if not account_iiko_ids:
         return {
@@ -900,6 +900,13 @@ def get_expenses_from_transactions(
     # Шаг 3: Получаем транзакции по этим account_id
     transactions_query = db.query(Transaction).filter(
         Transaction.account_id.in_(account_iiko_ids),
+        Transaction.date_time >= start_date,
+        Transaction.date_time <= end_date,
+        Transaction.is_active == True
+    )
+
+    salary_transactions_query = db.query(Transaction).filter(
+        Transaction.account_id == 'e0c6f1d8-4483-a946-0734-2585ed233bc4',
         Transaction.date_time >= start_date,
         Transaction.date_time <= end_date,
         Transaction.is_active == True,
@@ -914,11 +921,22 @@ def get_expenses_from_transactions(
     
     transactions = transactions_query.all()
     
+    salary_transactions = salary_transactions_query.all()
+
+    transactions.extend(salary_transactions)
+    
+    total_salary = sum(
+        float(abs(transaction.sum_resigned) or 0) 
+        for transaction in salary_transactions
+    )
+    
     # Считаем общую сумму расходов
     total_expenses = sum(
         float(abs(transaction.sum_resigned) or 0) 
         for transaction in transactions
     )
+
+    total_expenses += total_salary or 0
     
     # Группируем транзакции по типу счета и названию счета
     # Структура: {account_type: {account_name: [transactions]}}
