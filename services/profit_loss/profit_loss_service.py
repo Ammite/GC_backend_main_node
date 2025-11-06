@@ -10,7 +10,8 @@ from services.transactions_and_statistics.statistics_service import (
     get_period_dates,
     get_revenue_by_category,
     get_bank_commission_total,
-    get_expenses_from_transactions
+    get_expenses_from_transactions,
+    get_cost_of_goods_from_sales
 )
 import logging
 
@@ -73,7 +74,19 @@ def get_profit_loss_report(
     
     logger.info(f"Total expenses: {total_expenses}")
     
-    # 3. Получаем комиссии банка (из d_order.bank_commission)
+    # 3. Получаем себестоимость проданных товаров (из Sales)
+    cost_of_goods = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
+    logger.info(f"📦 Cost of goods: {cost_of_goods}")
+    
+    expenses_by_type.append(
+        ExpenseByType(
+            transaction_type="EXPENSES",
+            transaction_name="Себестоимость",
+            amount=cost_of_goods
+        )
+    )
+    
+    # 4. Получаем комиссии банка (из d_order.bank_commission)
     logger.info(f"📞 Calling get_bank_commission_total with: start={start_date}, end={end_date}, org={organization_id}")
     bank_commission = get_bank_commission_total(db, start_date, end_date, organization_id)
     logger.info(f"💰 Bank commission returned: {bank_commission}")
@@ -88,9 +101,9 @@ def get_profit_loss_report(
     
     logger.info(f"Bank commission: {bank_commission}")
     
-    # 4. Рассчитываем прибыль
-    # Прибыль = Доход - Расходы - Комиссия банков
-    gross_profit = total_revenue - total_expenses - bank_commission
+    # 5. Рассчитываем прибыль
+    # Прибыль = Доход - Расходы - Себестоимость - Комиссия банков
+    gross_profit = total_revenue - total_expenses - cost_of_goods - bank_commission
     
     # Маржа прибыли в процентах
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
