@@ -73,7 +73,7 @@ def get_additional_revenue_by_organization(db, organization_id, start_date, end_
     """
     Получает дополнительную выручку из транзакций по организации
     """
-    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
         and_(
             Transaction.organization_id == organization_id,
             Transaction.account_name == 'Задолженность перед поставщиками',
@@ -81,9 +81,9 @@ def get_additional_revenue_by_organization(db, organization_id, start_date, end_
             Transaction.date_typed >= start_date,
             Transaction.date_typed <= end_date
         )
-    ).scalar() or 0
+    ).scalar() or 0)
     
-    return float(additional_revenue)
+    return additional_revenue
 
 
 def get_revenue_by_organization(db, organization_id, start_date, end_date):

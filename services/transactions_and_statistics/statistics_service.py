@@ -417,14 +417,14 @@ def get_revenue_by_category(
     other_data = other_query.first()
 
     # Дополнительная выручка
-    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
         and_(
             Transaction.account_name == 'Задолженность перед поставщиками',
             Transaction.contr_account_type == 'INCOME',
             Transaction.date_typed >= start_date,
             Transaction.date_typed <= end_date
         )
-    ).scalar() or 0
+    ).scalar() or 0)
     
     other_base = float(other_data.sum_base or 0)
     other_discount = float(other_data.sum_discount or 0)

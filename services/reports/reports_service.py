@@ -250,16 +250,16 @@ def get_moneyflow_reports(
         incomes_sum += amount
     
     # Дополнительная выручка
-    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
         and_(
             Transaction.account_name == 'Задолженность перед поставщиками',
             Transaction.contr_account_type == 'INCOME',
             Transaction.date_typed >= start_date,
             Transaction.date_typed <= end_date
         )
-    ).scalar() or 0
+    ).scalar() or 0)
     
-    incomes_sum += float(additional_revenue)
+    incomes_sum += additional_revenue
     
     # Формируем массив доходов по категориям
     income_by_category = []
@@ -407,16 +407,16 @@ def get_sales_dynamics(
         total_checks += day_checks
     
     # Дополнительная выручка за весь период
-    additional_revenue = db.query(func.sum(Transaction.sum_resigned)).filter(
+    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
         and_(
             Transaction.account_name == 'Задолженность перед поставщиками',
             Transaction.contr_account_type == 'INCOME',
             Transaction.date_typed >= datetime.combine(start_date, datetime.min.time()),
             Transaction.date_typed <= datetime.combine(end_date, datetime.max.time())
         )
-    ).scalar() or 0
+    ).scalar() or 0)
     
-    total_revenue += float(additional_revenue)
+    total_revenue += additional_revenue
     
     overall_average_check = total_revenue / total_checks if total_checks > 0 else 0
     
