@@ -58,7 +58,7 @@ def get_profit_loss_report(
     logger.info(f"Total revenue: {total_revenue}")
     
     # 2. Получаем расходы (из Transactions)
-    expense_types = ['EXPENSES', 'EQUITY']
+    expense_types = ['EXPENSES']
     expenses_result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
     total_expenses = expenses_result["expenses_amount"]
     
