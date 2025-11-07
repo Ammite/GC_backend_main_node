@@ -34,18 +34,29 @@ def get_session():
     return Session()
 
 
-def find_matching_commissions_and_sales(session):
+def find_matching_commissions_and_sales(session, start_date=None, end_date=None):
     """
     Выполняет SQL-запрос для поиска совпадений между комиссиями и продажами.
     Теперь включает информацию о времени заказов для выбора ближайшего.
     
     Args:
         session: сессия БД
+        start_date: начальная дата для фильтрации (строка в формате 'YYYY-MM-DD')
+        end_date: конечная дата для фильтрации (строка в формате 'YYYY-MM-DD')
     
     Returns:
         list: список совпадений с информацией о заказах
     """
-    query = text("""
+    # Формируем условие для фильтрации по датам в таблице sales
+    date_filter_sales = ""
+    if start_date and end_date:
+        date_filter_sales = f"AND open_date_typed >= '{start_date}' AND open_date_typed <= '{end_date}'"
+    elif start_date:
+        date_filter_sales = f"AND open_date_typed >= '{start_date}'"
+    elif end_date:
+        date_filter_sales = f"AND open_date_typed <= '{end_date}'"
+    
+    query = text(f"""
         SELECT
             s.payment_id, 
             s.amount as sales_amount, 
@@ -72,6 +83,7 @@ def find_matching_commissions_and_sales(session):
                 public.sales
             WHERE
                 payment_transaction_id IS NOT NULL
+                {date_filter_sales}
             GROUP BY 
                 payment_transaction_id
         ) s
@@ -96,10 +108,6 @@ def find_matching_commissions_and_sales(session):
                 public.d_orders d
             WHERE 
                 d.iiko_id = ANY(string_to_array(s.order_ids, ', '))
-                and c.time_transaction >= '2025-10-1 00:00:00'
-                and c.time_transaction < '2025-10-20 23:59:59'
-                and c.bank_commission is not null
-                and c.source = 'temp_files/terminals_report/ИП Амиржан Каспий.xlsx'
         ) o ON true
         ORDER BY s.payment_id ASC
     """)
@@ -128,17 +136,30 @@ def find_matching_commissions_and_sales(session):
     return matches
 
 
-def find_closest_order_by_time(order_data_json, sale_precheque_time, sale_open_time, transaction_time):
+def find_closest_order_by_time(order_data_json, sale_precheque_time, sale_open_time, transaction_time, max_time_diff_hours=24):
     """
     Находит ближайший заказ по времени из списка заказов.
-    Сравнивает transaction_time с precheque_time и open_time из sales,
-    выбирает самое близкое время и находит заказ по нему.
+    
+    ПРАВИЛЬНАЯ ЛОГИКА:
+    - Сравнивает transaction_time (время оплаты на терминале) со ВСЕМИ тремя временами:
+      1. order_time (время создания заказа)
+      2. sale_precheque_time (время предоплаты)
+      3. sale_open_time (время открытия заказа)
+    - Для каждого заказа берет МИНИМАЛЬНУЮ разницу из трех
+    - Если минимальная разница больше max_time_diff_hours - отбрасывает заказ
+    - Из оставшихся выбирает заказ с наименьшей разницей
+    
+    Это нужно, потому что заказ может быть:
+    - Открыт (order_time)
+    - Оплачен частично как предоплата (sale_precheque_time)
+    - И потом через несколько дней оплачен полностью (transaction_time)
     
     Args:
         order_data_json: JSON с данными заказов
         sale_precheque_time: время precheque из sales
         sale_open_time: время open из sales
-        transaction_time: время транзакции из bank_commission
+        transaction_time: время транзакции из bank_commission (КЛЮЧЕВОЕ ПОЛЕ!)
+        max_time_diff_hours: максимальная допустимая разница в часах (по умолчанию 24)
     
     Returns:
         dict: ближайший заказ или None, и информация о выбранном времени
@@ -147,37 +168,15 @@ def find_closest_order_by_time(order_data_json, sale_precheque_time, sale_open_t
         return None, None
     
     if not transaction_time:
-        # Если нет времени транзакции, берем первый заказ
-        return order_data_json[0], "no_transaction_time"
+        # Если нет времени транзакции, не можем сопоставить
+        return None, {"error": "no_transaction_time"}
     
-    # Сравниваем transaction_time с precheque_time и open_time
-    # Выбираем самое близкое
-    best_reference_time = None
-    best_time_type = None
-    min_diff_to_transaction = float('inf')
+    max_time_diff_seconds = max_time_diff_hours * 3600
     
-    if sale_precheque_time:
-        diff = abs((transaction_time - sale_precheque_time).total_seconds())
-        if diff < min_diff_to_transaction:
-            min_diff_to_transaction = diff
-            best_reference_time = sale_precheque_time
-            best_time_type = "precheque_time"
-    
-    if sale_open_time:
-        diff = abs((transaction_time - sale_open_time).total_seconds())
-        if diff < min_diff_to_transaction:
-            min_diff_to_transaction = diff
-            best_reference_time = sale_open_time
-            best_time_type = "open_time"
-    
-    # Если не нашли подходящее время, используем transaction_time
-    if not best_reference_time:
-        best_reference_time = transaction_time
-        best_time_type = "transaction_time_fallback"
-    
-    # Теперь находим заказ с ближайшим временем к выбранному reference_time
+    # Ищем заказ с ближайшим временем к transaction_time
     closest_order = None
     min_time_diff = float('inf')
+    best_time_type = None
     
     for order in order_data_json:
         order_time = order.get('time_order')
@@ -188,19 +187,58 @@ def find_closest_order_by_time(order_data_json, sale_precheque_time, sale_open_t
         if isinstance(order_time, str):
             order_time = datetime.fromisoformat(order_time.replace('Z', '+00:00'))
         
-        # Вычисляем разницу во времени
-        time_diff = abs((order_time - best_reference_time).total_seconds())
+        # Вычисляем разницу со ВСЕМИ тремя временами
+        time_diffs = []
         
-        if time_diff < min_time_diff:
-            min_time_diff = time_diff
+        # 1. Разница с order_time (время создания заказа)
+        if order_time:
+            diff_order = abs((order_time - transaction_time).total_seconds())
+            time_diffs.append(('order_time', diff_order, order_time))
+        
+        # 2. Разница с sale_precheque_time (время предоплаты)
+        if sale_precheque_time:
+            diff_precheque = abs((sale_precheque_time - transaction_time).total_seconds())
+            time_diffs.append(('sale_precheque_time', diff_precheque, sale_precheque_time))
+        
+        # 3. Разница с sale_open_time (время открытия заказа)
+        if sale_open_time:
+            diff_open = abs((sale_open_time - transaction_time).total_seconds())
+            time_diffs.append(('sale_open_time', diff_open, sale_open_time))
+        
+        if not time_diffs:
+            continue
+        
+        # Берем МИНИМАЛЬНУЮ разницу из трех
+        min_diff_info = min(time_diffs, key=lambda x: x[1])
+        min_diff_type, min_diff_seconds, reference_time = min_diff_info
+        
+        # Если минимальная разница больше максимальной - отбрасываем этот заказ
+        if min_diff_seconds > max_time_diff_seconds:
+            continue
+        
+        # Если это лучший заказ на данный момент
+        if min_diff_seconds < min_time_diff:
+            min_time_diff = min_diff_seconds
             closest_order = order
+            best_time_type = min_diff_type
     
-    result_order = closest_order if closest_order else (order_data_json[0] if order_data_json else None)
+    if not closest_order:
+        # Не нашли заказ в допустимом временном диапазоне
+        return None, {
+            "error": f"no_order_within_{max_time_diff_hours}_hours",
+            "transaction_time": transaction_time.isoformat() if transaction_time else None,
+            "checked_orders_count": len(order_data_json)
+        }
     
-    return result_order, {
-        "used_time_type": best_time_type,
-        "reference_time": best_reference_time.isoformat() if best_reference_time else None,
-        "time_diff_to_order": min_time_diff if closest_order else None
+    return closest_order, {
+        "time_diff_seconds": min_time_diff,
+        "time_diff_hours": round(min_time_diff / 3600, 2),
+        "time_diff_type": best_time_type,
+        "transaction_time": transaction_time.isoformat() if transaction_time else None,
+        "order_time": closest_order.get('time_order'),
+        "sale_precheque_time": sale_precheque_time.isoformat() if sale_precheque_time else None,
+        "sale_open_time": sale_open_time.isoformat() if sale_open_time else None,
+        "max_allowed_hours": max_time_diff_hours
     }
 
 
@@ -240,7 +278,66 @@ def update_cheque_additional_info(current_info, payment_id):
         return json.dumps({'payment_ids': [payment_id]}, ensure_ascii=False)
 
 
-def sync_commission_with_order_fast(match, session, commit=True):
+def simulate_commission_match(match, session, max_time_diff_hours=24):
+    """
+    Симулирует сопоставление комиссии с заказом без записи в БД (для dry_run режима).
+    Использует ту же логику, что и обычное сопоставление.
+    
+    Args:
+        match: словарь с данными о совпадении
+        session: сессия БД
+        max_time_diff_hours: максимальная допустимая разница в часах (по умолчанию 24)
+    
+    Returns:
+        dict: результат симуляции
+    """
+    try:
+        # Проверяем, есть ли данные о заказах
+        if not match['order_data']:
+            return {
+                "success": False, 
+                "error": "No orders found for this match"
+            }
+        
+        # Используем ту же функцию поиска ближайшего заказа
+        closest_order_data, time_selection_info = find_closest_order_by_time(
+            match['order_data'],
+            match['sale_precheque_time'],
+            match['sale_open_time'],
+            match['transaction_time'],
+            max_time_diff_hours=max_time_diff_hours
+        )
+        
+        if not closest_order_data:
+            error_msg = time_selection_info.get('error', 'Could not find closest order') if time_selection_info else 'Could not find closest order'
+            return {
+                "success": False,
+                "error": error_msg,
+                "time_info": time_selection_info
+            }
+        
+        # Проверяем, есть ли уже комиссия
+        was_summed = closest_order_data['bank_commission'] is not None
+        current_commission = float(closest_order_data['bank_commission']) if closest_order_data['bank_commission'] else 0.0
+        new_commission = float(match['commission'])
+        total_commission = current_commission + new_commission
+        
+        return {
+            "success": True,
+            "order_id": closest_order_data['id'],
+            "order_iiko_id": closest_order_data['iiko_id'],
+            "was_summed": was_summed,
+            "total_commission_amount": total_commission,
+            "payment_transaction_id": match.get('payment_id'),
+            "sales_amount": match.get('sales_amount'),
+            "time_selection_info": time_selection_info
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def sync_commission_with_order_fast(match, session, commit=True, max_time_diff_hours=24):
     """
     Быстрое сопоставление комиссии с заказом на основе совпадения из SQL-запроса.
     Выбирает ближайший заказ по времени и записывает payment_id в cheque_additional_info.
@@ -249,6 +346,7 @@ def sync_commission_with_order_fast(match, session, commit=True):
         match: словарь с данными совпадения (включает order_data)
         session: сессия БД
         commit: делать ли commit (False для batch операций)
+        max_time_diff_hours: максимальная разница во времени в часах (по умолчанию 24)
     
     Returns:
         dict: результат операции
@@ -275,7 +373,8 @@ def sync_commission_with_order_fast(match, session, commit=True):
         order_data_json,
         match['sale_precheque_time'],
         match['sale_open_time'],
-        match['transaction_time']
+        match['transaction_time'],
+        max_time_diff_hours=max_time_diff_hours
     )
     
     if not closest_order_data:
@@ -328,13 +427,17 @@ def sync_commission_with_order_fast(match, session, commit=True):
         return {"success": False, "error": str(e)}
 
 
-def sync_all_commissions_fast(batch_size=100):
+def sync_all_commissions_fast(batch_size=100, start_date=None, end_date=None, dry_run=False, max_time_diff_hours=24):
     """
     Быстрое сопоставление всех комиссий с заказами через SQL-запрос.
     Использует batch операции для ускорения процесса.
     
     Args:
         batch_size: размер пакета для commit (по умолчанию 100)
+        start_date: начальная дата для фильтрации (строка в формате 'YYYY-MM-DD')
+        end_date: конечная дата для фильтрации (строка в формате 'YYYY-MM-DD')
+        dry_run: если True, только поиск без записи в БД (по умолчанию False)
+        max_time_diff_hours: максимальная разница во времени в часах (по умолчанию 24)
     
     Returns:
         dict: отчетность по сопоставлению
@@ -343,7 +446,12 @@ def sync_all_commissions_fast(batch_size=100):
     
     try:
         print("[INFO] Finding matching commissions and sales using SQL query...")
-        matches = find_matching_commissions_and_sales(session)
+        if start_date or end_date:
+            print(f"[INFO] Date filter: start={start_date or 'no limit'}, end={end_date or 'no limit'}")
+        if dry_run:
+            print("[INFO] DRY RUN MODE: No changes will be saved to database")
+        print(f"[INFO] Max time difference: {max_time_diff_hours} hours")
+        matches = find_matching_commissions_and_sales(session, start_date, end_date)
         print(f"[INFO] Found {len(matches)} potential matches")
         
         # Статистика
@@ -351,10 +459,13 @@ def sync_all_commissions_fast(batch_size=100):
             "total_matches_found": len(matches),
             "matched_commissions": 0,
             "failed_matches": 0,
+            "rejected_by_time_filter": 0,  # Отброшено из-за фильтра по времени
+            "rejected_by_time_filter_amount": 0.0,
             "total_commission_amount": 0.0,
             "matched_commission_amount": 0.0,
             "failed_commission_amount": 0.0,
             "orders_updated": 0,
+            "unique_orders_updated": set(),  # Уникальные ID заказов
             "summed_commissions": 0,  # Количество комиссий, которые были суммированы с существующими
             "matched_transactions": [],
             "failed_transactions": [],
@@ -365,24 +476,52 @@ def sync_all_commissions_fast(batch_size=100):
         batch_counter = 0
         successful_updates = 0
         
+        # Отслеживаем уже использованные комиссии и payment_transaction_id
+        used_commission_ids = set()  # Комиссии, которые уже были сопоставлены
+        used_payment_transaction_ids = set()  # payment_transaction_id, которые уже были использованы
+        
         for idx, match in enumerate(matches, 1):
+            commission_id = match['commission_id']
+            payment_id = match['payment_id']
             commission_amount = match['commission']
+            
+            # Пропускаем комиссию, если она уже была использована
+            if commission_id in used_commission_ids:
+                continue
+            
+            # Пропускаем payment_transaction_id, если он уже был использован
+            if payment_id and payment_id in used_payment_transaction_ids:
+                continue
+            
             stats["total_commission_amount"] += commission_amount
             
-            # Передаем commit=False для batch операций
-            result = sync_commission_with_order_fast(match, session, commit=False)
+            # Передаем commit=False для batch операций (и dry_run для режима без записи)
+            if dry_run:
+                # В режиме dry_run просто симулируем успешное сопоставление
+                result = simulate_commission_match(match, session, max_time_diff_hours=max_time_diff_hours)
+            else:
+                result = sync_commission_with_order_fast(match, session, commit=False, max_time_diff_hours=max_time_diff_hours)
             
             if result["success"]:
+                # Помечаем комиссию и payment_transaction_id как использованные
+                used_commission_ids.add(commission_id)
+                if payment_id:
+                    used_payment_transaction_ids.add(payment_id)
+                
                 stats["matched_commissions"] += 1
                 stats["matched_commission_amount"] += commission_amount
                 successful_updates += 1
                 batch_counter += 1
                 
+                order_id = result["order_id"]
+                
                 # Учитываем суммирование комиссий
                 if result.get("was_summed", False):
                     stats["summed_commissions"] += 1
-                else:
-                    # Считаем заказ только если это первая комиссия для него
+                
+                # Отслеживаем уникальные заказы (считаем только один раз на заказ)
+                if order_id not in stats["unique_orders_updated"]:
+                    stats["unique_orders_updated"].add(order_id)
                     stats["orders_updated"] += 1
                 
                 stats["matched_transactions"].append({
@@ -393,7 +532,7 @@ def sync_all_commissions_fast(batch_size=100):
                     "time_transaction": match['transaction_time'].isoformat() if match['transaction_time'] else None,
                     "sale_precheque_time": match['sale_precheque_time'].isoformat() if match['sale_precheque_time'] else None,
                     "sale_open_time": match['sale_open_time'].isoformat() if match['sale_open_time'] else None,
-                    "order_id": result["order_id"],
+                    "order_id": order_id,
                     "order_iiko_id": result["order_iiko_id"],
                     "was_summed": result.get("was_summed", False),
                     "total_commission_amount": result.get("total_commission_amount", commission_amount),
@@ -402,16 +541,16 @@ def sync_all_commissions_fast(batch_size=100):
                     "time_selection_info": result.get("time_selection_info")
                 })
                 
-                # Добавляем заказ в список только если это первая комиссия для него
-                if not result.get("was_summed", False):
+                # Добавляем заказ в список только один раз (при первом добавлении комиссии)
+                if order_id not in [o["order_id"] for o in stats["orders_with_commission_list"]]:
                     stats["orders_with_commission_list"].append({
-                        "order_id": result["order_id"],
+                        "order_id": order_id,
                         "order_iiko_id": result["order_iiko_id"],
                         "commission": commission_amount
                     })
                 
-                # Делаем commit каждые batch_size операций
-                if batch_counter >= batch_size:
+                # Делаем commit каждые batch_size операций (если не dry_run)
+                if not dry_run and batch_counter >= batch_size:
                     try:
                         session.commit()
                         print(f"[INFO] Batch commit: processed {idx}/{len(matches)} matches, {successful_updates} successful")
@@ -422,6 +561,12 @@ def sync_all_commissions_fast(batch_size=100):
                         batch_counter = 0
                         # Продолжаем обработку
             else:
+                # Проверяем, была ли ошибка из-за фильтра по времени
+                error = result.get("error", "")
+                if "no_order_within" in error or "no_transaction_time" in error:
+                    stats["rejected_by_time_filter"] += 1
+                    stats["rejected_by_time_filter_amount"] += commission_amount
+                
                 stats["failed_matches"] += 1
                 stats["failed_commission_amount"] += commission_amount
                 
@@ -434,8 +579,8 @@ def sync_all_commissions_fast(batch_size=100):
                     "error": result["error"]
                 })
         
-        # Финальный commit для оставшихся записей
-        if batch_counter > 0:
+        # Финальный commit для оставшихся записей (если не dry_run)
+        if not dry_run and batch_counter > 0:
             try:
                 session.commit()
                 print(f"[INFO] Final commit: all {len(matches)} matches processed")
@@ -444,14 +589,61 @@ def sync_all_commissions_fast(batch_size=100):
                 session.rollback()
         
         # Проверяем несопоставленные комиссии (которые не попали в SQL-запрос)
-        all_commissions = session.query(BankCommission).filter(BankCommission.order_id.is_(None)).all()
+        # Применяем фильтр по датам, если указан
+        query_all_commissions = session.query(BankCommission).filter(BankCommission.order_id.is_(None))
+        
+        # Если указаны даты, то учитываем только комиссии в указанном диапазоне
+        # Для этого нужно проверить связанные sales по датам
+        if start_date or end_date:
+            # Получаем ID комиссий из sales в нужном диапазоне дат
+            date_filter_for_commissions = "WHERE payment_transaction_id IS NOT NULL"
+            if start_date and end_date:
+                date_filter_for_commissions += f" AND open_date_typed >= '{start_date}' AND open_date_typed <= '{end_date}'"
+            elif start_date:
+                date_filter_for_commissions += f" AND open_date_typed >= '{start_date}'"
+            elif end_date:
+                date_filter_for_commissions += f" AND open_date_typed <= '{end_date}'"
+            
+            # Получаем все комиссии, связанные с sales в указанном диапазоне дат
+            query_commissions_in_date_range = text(f"""
+                SELECT DISTINCT c.id
+                FROM public.bank_commissions c
+                JOIN (
+                    SELECT DISTINCT organization_id, SUM(dish_discount_sum_int) as amount
+                    FROM public.sales
+                    {date_filter_for_commissions}
+                    GROUP BY organization_id, payment_transaction_id
+                ) s ON c.organization_id = s.organization_id AND c.amount = s.amount
+                WHERE c.order_id IS NULL
+            """)
+            result = session.execute(query_commissions_in_date_range)
+            commission_ids_in_range = {row[0] for row in result.fetchall()}
+            
+            # Фильтруем только комиссии в нужном диапазоне дат
+            all_commissions = [c for c in query_all_commissions.all() if c.id in commission_ids_in_range]
+        else:
+            all_commissions = query_all_commissions.all()
+        
         matched_commission_ids = {m['commission_id'] for m in matches}
         unmatched_commissions = [c for c in all_commissions if c.id not in matched_commission_ids]
         
         stats["unmatched_by_sql"] = len(unmatched_commissions)
         stats["unmatched_commission_amount"] = sum(float(c.bank_commission or 0) for c in unmatched_commissions)
         
-        print(f"[INFO] Sync completed: {stats['matched_commissions']} matched, {stats['failed_matches']} failed, {stats['unmatched_by_sql']} unmatched")
+        # Сохраняем детали несопоставленных комиссий
+        stats["unmatched_commissions_details"] = [
+            {
+                "commission_id": c.id,
+                "amount": float(c.amount or 0),
+                "commission": float(c.bank_commission or 0),
+                "organization_id": c.organization_id,
+                "time_transaction": c.time_transaction.isoformat() if c.time_transaction else None,
+                "source": c.source
+            }
+            for c in unmatched_commissions[:100]  # Первые 100 для экономии памяти
+        ]
+        
+        print(f"[INFO] Sync completed: {stats['matched_commissions']} matched, {stats['failed_matches']} failed ({stats.get('rejected_by_time_filter', 0)} rejected by time filter), {stats['unmatched_by_sql']} unmatched")
         
         return stats
         
@@ -463,12 +655,16 @@ def sync_all_commissions_fast(batch_size=100):
         session.close()
 
 
-def generate_commission_report_fast(batch_size=100):
+def generate_commission_report_fast(batch_size=100, start_date=None, end_date=None, dry_run=False, max_time_diff_hours=24):
     """
     Генерирует быстрый отчет по сопоставлению комиссий с заказами.
     
     Args:
         batch_size: размер пакета для commit (по умолчанию 100)
+        start_date: начальная дата для фильтрации (строка в формате 'YYYY-MM-DD')
+        end_date: конечная дата для фильтрации (строка в формате 'YYYY-MM-DD')
+        dry_run: если True, только поиск без записи в БД (по умолчанию False)
+        max_time_diff_hours: максимальная разница во времени в часах (по умолчанию 24)
     
     Returns:
         dict: полный отчет
@@ -476,30 +672,43 @@ def generate_commission_report_fast(batch_size=100):
     import time
     
     start_time = time.time()
-    stats = sync_all_commissions_fast(batch_size=batch_size)
+    stats = sync_all_commissions_fast(
+        batch_size=batch_size, 
+        start_date=start_date, 
+        end_date=end_date, 
+        dry_run=dry_run,
+        max_time_diff_hours=max_time_diff_hours
+    )
     elapsed_time = time.time() - start_time
     
     report = {
         "timestamp": datetime.now().isoformat(),
         "elapsed_time_seconds": round(elapsed_time, 2),
         "batch_size": batch_size,
+        "start_date": start_date,
+        "end_date": end_date,
+        "dry_run": dry_run,
+        "max_time_diff_hours": max_time_diff_hours,
         "summary": {
             "total_matches_found": stats["total_matches_found"],
             "matched_commissions": stats["matched_commissions"],
             "failed_matches": stats["failed_matches"],
+            "rejected_by_time_filter": stats.get("rejected_by_time_filter", 0),
             "unmatched_by_sql": stats.get("unmatched_by_sql", 0),
             "summed_commissions": stats["summed_commissions"],
             "match_percentage": (stats["matched_commissions"] / stats["total_matches_found"] * 100) if stats["total_matches_found"] > 0 else 0,
             "total_commission_amount": stats["total_commission_amount"],
             "matched_commission_amount": stats["matched_commission_amount"],
             "failed_commission_amount": stats["failed_commission_amount"],
+            "rejected_by_time_filter_amount": stats.get("rejected_by_time_filter_amount", 0.0),
             "unmatched_commission_amount": stats.get("unmatched_commission_amount", 0.0),
             "orders_updated": stats["orders_updated"],
         },
         "details": {
             "matched_transactions": stats["matched_transactions"],
             "failed_transactions": stats["failed_transactions"],
-            "orders_with_commission": stats["orders_with_commission_list"]
+            "orders_with_commission": stats["orders_with_commission_list"],
+            "unmatched_commissions": stats.get("unmatched_commissions_details", [])
         }
     }
     
