@@ -69,21 +69,23 @@ def get_organizations(db):
     return db.query(Organization).filter(Organization.is_active == True).all()
 
 
-# def get_additional_revenue_by_organization(db, organization_id, start_date, end_date):
-#     """
-#     Получает дополнительную выручку из транзакций по организации
-#     """
-#     additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
-#         and_(
-#             Transaction.organization_id == organization_id,
-#             Transaction.account_name == 'Задолженность перед поставщиками',
-#             Transaction.contr_account_type == 'INCOME',
-#             Transaction.date_typed >= start_date,
-#             Transaction.date_typed <= end_date
-#         )
-#     ).scalar() or 0)
+def get_additional_revenue_by_organization(db, organization_id, start_date, end_date):
+    """
+    Получает дополнительную выручку из транзакций по организации
+    """
+    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            Transaction.organization_id == organization_id,
+            # Transaction.account_name == 'Задолженность перед поставщиками',
+            # Transaction.contr_account_type == 'INCOME',
+            Transaction.contr_account_name == 'Торговая выручка',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0)
     
-#     return additional_revenue
+    additional_revenue = abs(additional_revenue)
+    return additional_revenue
 
 
 def get_revenue_by_organization(db, organization_id, start_date, end_date):
@@ -124,9 +126,9 @@ def get_revenue_by_organization(db, organization_id, start_date, end_date):
     bar_revenue = float(bar_query.full_sum or 0) - float(bar_query.discount or 0)
     
     # Дополнительная выручка
-    # additional_revenue = get_additional_revenue_by_organization(db, organization_id, start_date, end_date)
+    additional_revenue = get_additional_revenue_by_organization(db, organization_id, start_date, end_date)
     
-    return kitchen_revenue, bar_revenue
+    return kitchen_revenue, bar_revenue, additional_revenue
 
 
 def get_cost_of_goods_by_organization(db, organization_id, start_date, end_date):
@@ -328,7 +330,7 @@ def create_profit_loss_report(start_date='2025-10-13 00:00:00', end_date='2025-1
         all_categories_list.append('bank_commission')
         all_categories_list.append('Выручка > Кухня')
         all_categories_list.append('Выручка > Бар')
-        # all_categories_list.append('Выручка > Дополнительная')
+        all_categories_list.append('Выручка > Дополнительная')
         all_categories_list.append('discount')
         
         print(f"\nНайдено категорий: {len(all_categories_list)}")
@@ -393,8 +395,8 @@ def create_profit_loss_report(start_date='2025-10-13 00:00:00', end_date='2025-1
             report_data['Выручка > Бар'][org.name] = float(bar_revenue_query or 0)
             
             # Получаем дополнительную выручку из транзакций
-            # additional_revenue = get_additional_revenue_by_organization(db, org.id, start_date, end_date)
-            # report_data['Выручка > Дополнительная'][org.name] = additional_revenue
+            additional_revenue = get_additional_revenue_by_organization(db, org.id, start_date, end_date)
+            report_data['Выручка > Дополнительная'][org.name] = additional_revenue
             # print(f"  Дополнительная выручка: {additional_revenue:.2f}")
             
             # Получаем discount из d_orders (сумма скидок)
