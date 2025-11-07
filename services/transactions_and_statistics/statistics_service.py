@@ -137,8 +137,8 @@ def calculate_revenue_from_orders(orders: List[DOrder], use_discount: bool = Fal
         Общая сумма выручки
     """
     if use_discount:
-        return sum(float(order.discount or 0) for order in orders)
-    return sum(float(order.sum_order or 0) for order in orders)
+        return round(sum(float(order.discount or 0) for order in orders), 2)
+    return round(sum(float(order.sum_order or 0) for order in orders), 2)
 
 
 def calculate_average_check(orders: List[DOrder], use_discount: bool = False) -> float:
@@ -156,7 +156,7 @@ def calculate_average_check(orders: List[DOrder], use_discount: bool = False) ->
         return 0.0
     
     revenue = calculate_revenue_from_orders(orders, use_discount)
-    return revenue / len(orders)
+    return round(revenue / len(orders), 2)
 
 
 # ==================== РАБОТА С SALES ====================
@@ -192,7 +192,7 @@ def get_returns_sum_from_sales(
         sales_query = sales_query.filter(Sales.organization_id == organization_id)
     
     sales = sales_query.all()
-    return sum(float(sale.dish_sum_int or 0) for sale in sales)
+    return round(sum(float(sale.dish_sum_int or 0) for sale in sales), 2)
 
 
 def get_cost_of_goods_from_sales(
@@ -234,7 +234,7 @@ def get_cost_of_goods_from_sales(
         result = result.filter(Sales.organization_id == organization_id)
     
     total = result.scalar()
-    return float(total or 0)
+    return round(float(total or 0), 2)
 
 
 def get_writeoffs_sum_from_sales(
@@ -267,7 +267,7 @@ def get_writeoffs_sum_from_sales(
         sales_query = sales_query.filter(Sales.organization_id == organization_id)
     
     sales = sales_query.all()
-    return sum(float(sale.dish_discount_sum_int or 0) for sale in sales)
+    return round(sum(float(sale.dish_discount_sum_int or 0) for sale in sales), 2)
 
 
 def get_writeoffs_details_from_sales(
@@ -320,7 +320,7 @@ def get_writeoffs_details_from_sales(
     
     # Преобразуем в список кортежей
     return [
-        (dish_name, data['quantity'], data['amount'], data['reason'])
+        (dish_name, data['quantity'], round(data['amount'], 2), data['reason'])
         for dish_name, data in writeoffs_dict.items()
     ]
 
@@ -370,10 +370,10 @@ def get_revenue_by_category(
         kitchen_query = kitchen_query.filter(Sales.organization_id == organization_id)
     
     kitchen_data = kitchen_query.first()
-    kitchen_base = float(kitchen_data.sum_base or 0)
-    kitchen_discount = float(kitchen_data.sum_discount or 0)
-    kitchen_increase = float(kitchen_data.sum_increase or 0)
-    kitchen_revenue = kitchen_base - kitchen_discount + kitchen_increase
+    kitchen_base = round(float(kitchen_data.sum_base or 0), 2)
+    kitchen_discount = round(float(kitchen_data.sum_discount or 0), 2)
+    kitchen_increase = round(float(kitchen_data.sum_increase or 0), 2)
+    kitchen_revenue = round(kitchen_base - kitchen_discount + kitchen_increase, 2)
     
     # Выручка Бар (не Кухня, с учетом скидок и наценок)
     bar_query = db.query(
@@ -393,10 +393,10 @@ def get_revenue_by_category(
         bar_query = bar_query.filter(Sales.organization_id == organization_id)
     
     bar_data = bar_query.first()
-    bar_base = float(bar_data.sum_base or 0)
-    bar_discount = float(bar_data.sum_discount or 0)
-    bar_increase = float(bar_data.sum_increase or 0)
-    bar_revenue = bar_base - bar_discount + bar_increase
+    bar_base = round(float(bar_data.sum_base or 0), 2)
+    bar_discount = round(float(bar_data.sum_discount or 0), 2)
+    bar_increase = round(float(bar_data.sum_increase or 0), 2)
+    bar_revenue = round(bar_base - bar_discount + bar_increase, 2)
     
     # Прочие (без категории, с учетом скидок и наценок)
     other_query = db.query(
@@ -429,31 +429,40 @@ def get_revenue_by_category(
 
     overall_data = overall_query.first()
 
-    overall_revenue = float(overall_data.sum_total or 0)
+    overall_revenue = round(float(overall_data.sum_total or 0), 2)
     
 
     # Дополнительная выручка
-    additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
+    # Суммируем отдельно sum_incoming и sum_outgoing
+    sum_incoming = float(db.query(func.sum(Transaction.sum_incoming)).filter(
         and_(
-            # Transaction.account_name == 'Задолженность перед поставщиками',
-            # Transaction.contr_account_type == 'INCOME',
             Transaction.contr_account_name == 'Торговая выручка',
             Transaction.date_typed >= start_date,
             Transaction.date_typed <= end_date
         )
     ).scalar() or 0)
-    additional_revenue = abs(additional_revenue)
     
-    other_base = float(other_data.sum_base or 0)
-    other_discount = float(other_data.sum_discount or 0)
-    other_increase = float(other_data.sum_increase or 0)
-    other_revenue = other_base - other_discount + other_increase
+    sum_outgoing = float(db.query(func.sum(Transaction.sum_outgoing)).filter(
+        and_(
+            Transaction.contr_account_name == 'Торговая выручка',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0)
+    
+    # Итогово = sum_incoming - sum_outgoing
+    additional_revenue = round(sum_incoming - sum_outgoing, 2)
+    
+    other_base = round(float(other_data.sum_base or 0), 2)
+    other_discount = round(float(other_data.sum_discount or 0), 2)
+    other_increase = round(float(other_data.sum_increase or 0), 2)
+    other_revenue = round(other_base - other_discount + other_increase, 2)
     
     # Общая сумма наценок (отдельная категория)
-    total_increase = kitchen_increase + bar_increase + other_increase
+    total_increase = round(kitchen_increase + bar_increase + other_increase, 2)
     
     # Общая выручка
-    total_revenue = overall_revenue + additional_revenue
+    total_revenue = round(overall_revenue + additional_revenue, 2)
     
     return {
         "Кухня": kitchen_base,
@@ -511,7 +520,7 @@ def get_revenue_by_menu_category_and_payment(
         (
             row.dish_category or "Без категории",
             row.card_type_name or "Без типа оплаты",
-            float(row.total_amount or 0)
+            round(float(row.total_amount or 0), 2)
         )
         for row in results
     ]
@@ -558,6 +567,10 @@ def get_bank_commission_total(
         commission_query = commission_query.filter(BankCommission.organization_id == organization_id)
     
     result = float(commission_query.scalar() or 0)
+    # Применяем abs() по итогу
+    result = abs(result)
+    # Округляем до 2 знаков после запятой
+    result = round(result, 2)
     
     logger.info(f"   💰 Total commission: {result}")
     
@@ -595,7 +608,7 @@ def get_total_discount_from_orders(
         query = query.filter(DOrder.organization_id == organization_id)
     
     result = query.scalar()
-    return float(result or 0)
+    return round(float(result or 0), 2)
 
 
 # ==================== РАБОТА С БЛЮДАМИ ====================
@@ -650,7 +663,7 @@ def get_average_items_per_order(
     
     orders_count = orders_count_query.scalar() or 0
     
-    return total_items_count / orders_count if orders_count > 0 else 0
+    return round(total_items_count / orders_count, 2) if orders_count > 0 else 0.0
 
 
 def get_popular_dishes(
@@ -709,7 +722,11 @@ def get_popular_dishes(
     
     logger.info(f"Found {len(results)} unique dishes (popular)")
     
-    return results
+    # Округляем суммы до 2 знаков после запятой
+    return [
+        (dish_name, total_count, round(float(total_amount or 0), 2))
+        for dish_name, total_count, total_amount in results
+    ]
 
 
 def get_unpopular_dishes(
@@ -761,7 +778,11 @@ def get_unpopular_dishes(
         func.sum(Sales.dish_amount_int).asc()
     ).limit(limit).all()
     
-    return results
+    # Округляем суммы до 2 знаков после запятой
+    return [
+        (dish_name, total_count, round(float(total_amount or 0), 2))
+        for dish_name, total_count, total_amount in results
+    ]
 
 
 def get_dishes_with_cost(
@@ -808,7 +829,11 @@ def get_dishes_with_cost(
     
     results = query.group_by(Sales.dish_name).all()
     
-    return results
+    # Округляем суммы до 2 знаков после запятой
+    return [
+        (dish_name, quantity, round(float(cost_amount or 0), 2))
+        for dish_name, quantity, cost_amount in results
+    ]
 
 
 # ==================== РАБОТА С СОТРУДНИКАМИ ====================
@@ -860,7 +885,11 @@ def get_top_employees_by_revenue(
         func.sum(Sales.dish_discount_sum_int).desc()
     ).limit(limit).all()
     
-    return results
+    # Округляем суммы до 2 знаков после запятой
+    return [
+        (waiter_name, waiter_id, employee_id, round(float(total_revenue or 0), 2))
+        for waiter_name, waiter_id, employee_id, total_revenue in results
+    ]
 
 
 # ==================== РАБОТА С ТРАНЗАКЦИЯМИ И РАСХОДАМИ ====================
@@ -951,6 +980,7 @@ def get_expenses_from_transactions(
     )
 
     total_expenses += total_salary or 0
+    total_expenses = round(total_expenses, 2)
     
     # Группируем транзакции по типу счета и названию счета
     # Структура: {account_type: {account_name: [transactions]}}
@@ -974,7 +1004,7 @@ def get_expenses_from_transactions(
     for account_type, accounts_dict in grouped_data.items():
         for account_name, trans_list in accounts_dict.items():
             # Считаем сумму всех транзакций для этого типа и счета
-            account_total = sum(float(abs(t.sum_resigned) or 0) for t in trans_list)
+            account_total = round(sum(float(abs(t.sum_resigned) or 0) for t in trans_list), 2)
             
             # Формируем список транзакций
             transactions_items = []
@@ -983,7 +1013,7 @@ def get_expenses_from_transactions(
                     "transaction_id": trans.id,
                     "transaction_type": account_type,
                     "transaction_name": account_name,
-                    "transaction_amount": float(abs(trans.sum_resigned) or 0),
+                    "transaction_amount": round(float(abs(trans.sum_resigned) or 0), 2),
                     "transaction_datetime": trans.date_time.strftime("%Y-%m-%d %H:%M:%S") if trans.date_time else "",
                     "transaction_comment": trans.comment or ""
                 })
