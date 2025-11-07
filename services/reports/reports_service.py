@@ -425,11 +425,12 @@ def get_sales_dynamics(
     
     # Дополнительная выручка за весь период
     # Суммируем отдельно sum_incoming и sum_outgoing
+    # start_date и end_date уже являются объектами date, не нужно вызывать .date()
     sum_incoming = db.query(func.sum(Transaction.sum_incoming)).filter(
         and_(
             Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
         )
     )
     if organization_id:
@@ -439,8 +440,8 @@ def get_sales_dynamics(
     sum_outgoing = db.query(func.sum(Transaction.sum_outgoing)).filter(
         and_(
             Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
         )
     )
     if organization_id:

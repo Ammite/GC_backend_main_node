@@ -17,6 +17,7 @@ from schemas.analytics import (
 from services.transactions_and_statistics.statistics_service import (
     format_currency,
     calculate_change_percent,
+    get_revenue_by_category,
     parse_date,
     get_period_dates,
     get_orders_for_period,
@@ -58,65 +59,11 @@ def get_analytics(
     previous_orders = get_orders_for_period(db, previous_start, previous_end, organization_id)
     
     # Считаем метрики
-    current_revenue = calculate_revenue_from_orders(orders, use_discount=True)
-    previous_revenue = calculate_revenue_from_orders(previous_orders, use_discount=True)
     
-    # Дополнительная выручка для текущего периода
-    # Суммируем отдельно sum_incoming и sum_outgoing
-    sum_incoming_current = db.query(func.sum(Transaction.sum_incoming)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
-        )
-    )
-    if organization_id:
-        sum_incoming_current = sum_incoming_current.filter(Transaction.organization_id == organization_id)
-    sum_incoming_current = float(sum_incoming_current.scalar() or 0)
-    
-    sum_outgoing_current = db.query(func.sum(Transaction.sum_outgoing)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
-        )
-    )
-    if organization_id:
-        sum_outgoing_current = sum_outgoing_current.filter(Transaction.organization_id == organization_id)
-    sum_outgoing_current = float(sum_outgoing_current.scalar() or 0)
-    
-    # Итогово = sum_incoming - sum_outgoing
-    additional_revenue_current = round(sum_incoming_current - sum_outgoing_current, 2)
-    
-    # Дополнительная выручка для предыдущего периода
-    # Суммируем отдельно sum_incoming и sum_outgoing
-    sum_incoming_previous = db.query(func.sum(Transaction.sum_incoming)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= previous_start.date(),
-            Transaction.date_typed <= previous_end.date()
-        )
-    )
-    if organization_id:
-        sum_incoming_previous = sum_incoming_previous.filter(Transaction.organization_id == organization_id)
-    sum_incoming_previous = float(sum_incoming_previous.scalar() or 0)
-    
-    sum_outgoing_previous = db.query(func.sum(Transaction.sum_outgoing)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= previous_start.date() ,
-            Transaction.date_typed <= previous_end.date()
-        )
-    )
-    if organization_id:
-        sum_outgoing_previous = sum_outgoing_previous.filter(Transaction.organization_id == organization_id)
-    sum_outgoing_previous = float(sum_outgoing_previous.scalar() or 0)
-    
-    # Итогово = sum_incoming - sum_outgoing
-    additional_revenue_previous = round(sum_incoming_previous - sum_outgoing_previous, 2)
-
-    current_revenue += additional_revenue_current
-    previous_revenue += additional_revenue_previous
+    current_revenue_data = get_revenue_by_category(db, start_date, end_date, organization_id)
+    current_revenue = current_revenue_data["total"]
+    previous_revenue_data = get_revenue_by_category(db, previous_start, previous_end, organization_id)
+    previous_revenue = previous_revenue_data["total"]
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)
