@@ -62,28 +62,33 @@ def get_analytics(
     previous_revenue = calculate_revenue_from_orders(previous_orders, use_discount=True)
     
     # Дополнительная выручка для текущего периода
-    # additional_revenue_current = float(db.query(func.sum(Transaction.sum_resigned)).filter(
-    #     and_(
-    #         Transaction.account_name == 'Задолженность перед поставщиками',
-    #         Transaction.contr_account_type == 'INCOME',
-    #         Transaction.date_typed >= start_date,
-    #         Transaction.date_typed <= end_date
-    #     )
-    # ).scalar() or 0)
+    additional_revenue_current = float(db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            # Transaction.account_name == 'Задолженность перед поставщиками',
+            # Transaction.contr_account_type == 'INCOME',
+            Transaction.contr_account_name == 'Торговая выручка',
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date
+        )
+    ).scalar() or 0)
     
     # # Дополнительная выручка для предыдущего периода
-    # additional_revenue_previous = float(db.query(func.sum(Transaction.sum_resigned)).filter(
-    #     and_(
-    #         Transaction.account_name == 'Задолженность перед поставщиками',
-    #         Transaction.contr_account_type == 'INCOME',
-    #         Transaction.date_typed >= previous_start,
-    #         Transaction.date_typed <= previous_end
-    #     )
-    # ).scalar() or 0)
+    additional_revenue_previous = float(db.query(func.sum(Transaction.sum_resigned)).filter(
+        and_(
+            # Transaction.account_name == 'Задолженность перед поставщиками',
+            # Transaction.contr_account_type == 'INCOME',
+            Transaction.contr_account_name == 'Торговая выручка',
+            Transaction.date_typed >= previous_start,
+            Transaction.date_typed <= previous_end
+        )
+    ).scalar() or 0)
     
     # # Добавляем дополнительную выручку к общей
-    # current_revenue += additional_revenue_current
-    # previous_revenue += additional_revenue_previous
+    additional_revenue_current = abs(additional_revenue_current)
+    additional_revenue_previous = abs(additional_revenue_previous)
+
+    current_revenue += additional_revenue_current
+    previous_revenue += additional_revenue_previous
     
     current_checks = len(orders)
     previous_checks = len(previous_orders)
