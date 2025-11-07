@@ -74,23 +74,29 @@ def get_additional_revenue_by_organization(db, organization_id, start_date, end_
     Получает дополнительную выручку из транзакций по организации
     """
     # Суммируем отдельно sum_incoming и sum_outgoing
-    sum_incoming = float(db.query(func.sum(Transaction.sum_incoming)).filter(
+    sum_incoming = db.query(func.sum(Transaction.sum_incoming)).filter(
         and_(
             Transaction.organization_id == organization_id,
             Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date,
-            Transaction.date_typed <= end_date
+            Transaction.date_typed >= start_date.date(),
+            Transaction.date_typed <= end_date.date()
         )
-    ).scalar() or 0)
+    )
+    if organization_id:
+        sum_incoming = sum_incoming.filter(Transaction.organization_id == organization_id)
+    sum_incoming = float(sum_incoming.scalar() or 0)
     
-    sum_outgoing = float(db.query(func.sum(Transaction.sum_outgoing)).filter(
+    sum_outgoing = db.query(func.sum(Transaction.sum_outgoing)).filter(
         and_(
             Transaction.organization_id == organization_id,
             Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date,
-            Transaction.date_typed <= end_date
+            Transaction.date_typed >= start_date.date(),
+            Transaction.date_typed <= end_date.date()
         )
-    ).scalar() or 0)
+    )
+    if organization_id:
+        sum_outgoing = sum_outgoing.filter(Transaction.organization_id == organization_id)
+    sum_outgoing = float(sum_outgoing.scalar() or 0)
     
     # Итогово = sum_incoming - sum_outgoing
     additional_revenue = round(sum_incoming - sum_outgoing, 2)
