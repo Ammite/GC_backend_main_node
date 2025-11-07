@@ -16,6 +16,8 @@ from models.account import Account
 from models.transaction import Transaction
 from schemas.analytics import ChangeMetric
 
+import logging
+logger = logging.getLogger(__name__)
 
 # ==================== УТИЛИТЫ ====================
 
@@ -381,7 +383,7 @@ def get_revenue_by_category(
     ).filter(
         and_(
             base_filter,
-            Sales.cooking_place_type != 'Кухня',
+            func.lower(Sales.cooking_place_type).not_like('%кухня%'),
             Sales.cooking_place_type.isnot(None),
             Sales.dish_sum_int.isnot(None)
         )
@@ -414,6 +416,22 @@ def get_revenue_by_category(
     
     other_data = other_query.first()
 
+    overall_query = db.query(
+        func.sum(Sales.dish_discount_sum_int).label('sum_total'),
+    ).filter(
+        and_(
+            base_filter,
+        )
+    )
+
+    if organization_id:
+        overall_query = overall_query.filter(Sales.organization_id == organization_id)
+
+    overall_data = overall_query.first()
+
+    overall_revenue = float(overall_data.sum_total or 0)
+    
+
     # Дополнительная выручка
     # additional_revenue = float(db.query(func.sum(Transaction.sum_resigned)).filter(
     #     and_(
@@ -433,7 +451,7 @@ def get_revenue_by_category(
     total_increase = kitchen_increase + bar_increase + other_increase
     
     # Общая выручка
-    total_revenue = kitchen_revenue + bar_revenue + other_revenue 
+    total_revenue = overall_revenue 
     
     return {
         "Кухня": kitchen_base,
@@ -536,21 +554,8 @@ def get_bank_commission_total(
     if organization_id:
         commission_query = commission_query.filter(BankCommission.organization_id == organization_id)
     
-    # Для отладки - считаем количество записей
-    count_query = db.query(func.count(BankCommission.id)).filter(
-        and_(
-            BankCommission.time_transaction >= start_date,
-            BankCommission.time_transaction < end_date,
-            BankCommission.bank_commission.isnot(None)
-        )
-    )
-    if organization_id:
-        count_query = count_query.filter(BankCommission.organization_id == organization_id)
-    
-    records_count = count_query.scalar()
     result = float(commission_query.scalar() or 0)
     
-    logger.info(f"   📊 Found {records_count} commission records")
     logger.info(f"   💰 Total commission: {result}")
     
     return result
@@ -898,17 +903,18 @@ def get_expenses_from_transactions(
     # Шаг 3: Получаем транзакции по этим account_id
     transactions_query = db.query(Transaction).filter(
         Transaction.account_id.in_(account_iiko_ids),
-        Transaction.date_time >= start_date,
-        Transaction.date_time <= end_date,
+        Transaction.date_typed >= start_date.date(),
+        Transaction.date_typed <= end_date.date(),
         Transaction.is_active == True
     )
 
     salary_transactions_query = db.query(Transaction).filter(
-        Transaction.account_id == 'e0c6f1d8-4483-a946-0734-2585ed233bc4',
-        Transaction.date_time >= start_date,
-        Transaction.date_time <= end_date,
+        Transaction.account_id == '13000ead-41f0-d569-d85c-704242cc91f5',
+        Transaction.date_typed >= start_date.date(),
+        Transaction.date_typed <= end_date.date(),
         Transaction.is_active == True,
-        Transaction.transaction_side == 'CREDIT'
+        Transaction.transaction_side == 'DEBIT',
+        Transaction.contr_account_name == 'Зарплата'
     )
     
     # Фильтруем по организации если указана
@@ -916,10 +922,16 @@ def get_expenses_from_transactions(
         transactions_query = transactions_query.filter(
             Transaction.organization_id == organization_id
         )
+        salary_transactions_query = salary_transactions_query.filter(
+            Transaction.organization_id == organization_id
+        )
     
     transactions = transactions_query.all()
     
     salary_transactions = salary_transactions_query.all()
+
+    logger.info(f"Salary transactions: {salary_transactions}")
+    logger.info(f"Transactions: {transactions}")
 
     transactions.extend(salary_transactions)
     
@@ -932,6 +944,7 @@ def get_expenses_from_transactions(
     total_expenses = sum(
         float(abs(transaction.sum_resigned) or 0) 
         for transaction in transactions
+        if transaction.contr_account_name != 'Зарплата' and transaction.account_id != 'e0c6f1d8-4483-a946-0734-2585ed233bc4'
     )
 
     total_expenses += total_salary or 0
