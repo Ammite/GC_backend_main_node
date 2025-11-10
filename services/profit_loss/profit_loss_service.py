@@ -113,7 +113,7 @@ def get_profit_loss_report(
     
     # 5. Рассчитываем прибыль
     # Прибыль = Доход - Расходы - Себестоимость - Комиссия банков
-    gross_profit = total_revenue - total_expenses - cost_of_goods - bank_commission
+    gross_profit = total_revenue - total_expenses - cost_of_goods
     
     # Маржа прибыли в процентах
     profit_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
