@@ -40,7 +40,8 @@ from services.transactions_and_statistics.statistics_service import (
     get_total_discount_from_orders,
     get_expenses_from_transactions,
     get_revenue_by_menu_category_and_payment,
-    get_bank_commission_total
+    get_bank_commission_total,
+    get_factory_revenue
 )
 from models.transaction import Transaction
 
@@ -276,7 +277,10 @@ def get_moneyflow_reports(
     # Итогово = sum_incoming - sum_outgoing
     additional_revenue = round(sum_incoming - sum_outgoing, 2)
     
-    incomes_sum += additional_revenue
+    # Выручка с фабрики
+    factory_revenue = get_factory_revenue(db, start_date, end_date, organization_id)
+    
+    incomes_sum += additional_revenue + factory_revenue
     
     # Формируем массив доходов по категориям
     income_by_category = []
@@ -451,7 +455,13 @@ def get_sales_dynamics(
     # Итогово = sum_incoming - sum_outgoing
     additional_revenue = round(sum_incoming - sum_outgoing, 2)
     
-    total_revenue += additional_revenue
+    # Выручка с фабрики за весь период
+    # Преобразуем date в datetime для функции get_factory_revenue
+    start_datetime = datetime.combine(start_date, datetime.min.time())
+    end_datetime = datetime.combine(end_date, datetime.max.time())
+    factory_revenue = get_factory_revenue(db, start_datetime, end_datetime, organization_id)
+    
+    total_revenue += additional_revenue + factory_revenue
     
     overall_average_check = total_revenue / total_checks if total_checks > 0 else 0
     
