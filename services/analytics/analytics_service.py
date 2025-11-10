@@ -113,8 +113,9 @@ def get_analytics(
     # Получаем возвраты из Sales
     returns_sum = get_returns_sum_from_sales(db, start_date, end_date, organization_id)
     
-    # Получаем себестоимость проданных товаров
-    cost_of_goods = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
+    # Получаем себестоимость проданных товаров (теперь возвращает словарь с категориями)
+    cost_of_goods_dict = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
+    cost_of_goods = cost_of_goods_dict.get("total", 0.0)
     
     order_metrics = [
         OrderMetric(

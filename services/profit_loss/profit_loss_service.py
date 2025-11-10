@@ -74,17 +74,27 @@ def get_profit_loss_report(
     
     logger.info(f"Total expenses: {total_expenses}")
     
-    # 3. Получаем себестоимость проданных товаров (из Sales)
-    cost_of_goods = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
-    logger.info(f"📦 Cost of goods: {cost_of_goods}")
+    # 3. Получаем себестоимость проданных товаров (из Transactions, теперь возвращает словарь с категориями)
+    cost_of_goods_dict = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
+    cost_of_goods = cost_of_goods_dict.get("total", 0.0)
+    logger.info(f"📦 Cost of goods: {cost_of_goods} (by categories: {cost_of_goods_dict})")
     
     expenses_by_type.append(
         ExpenseByType(
             transaction_type="EXPENSES",
-            transaction_name="Себестоимость",
+            transaction_name="Итого себестоимость",
             amount=cost_of_goods
         )
     )
+    for category, amount in cost_of_goods_dict.items():
+        if category != "total":
+            expenses_by_type.append(
+                ExpenseByType(
+                    transaction_type="EXPENSES",
+                    transaction_name=f"Себестоимость: {category}",
+                    amount=amount
+                )
+            )
     
     # 4. Получаем комиссии банка (из d_order.bank_commission)
     logger.info(f"📞 Calling get_bank_commission_total with: start={start_date}, end={end_date}, org={organization_id}")
