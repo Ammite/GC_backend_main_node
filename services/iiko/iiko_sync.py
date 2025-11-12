@@ -6,7 +6,7 @@
 import json
 import logging
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -1049,77 +1049,101 @@ class IikoSync:
         return None
 
     async def sync_transactions(self, db: Session, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Dict[str, int]:
-        """Синхронизация транзакций"""  
+        """Синхронизация транзакций с удалением записей за день (from_date) перед записью"""  
         try:
+            if not from_date or not to_date:
+                logger.warning("Не указаны даты для синхронизации транзакций")
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": 0}
+            
+            # Нормализуем дату (убираем время, оставляем только дату)
+            day_date = from_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_date_end = day_date + timedelta(days=1)
+            
+            logger.info(f"Синхронизация транзакций за {day_date.date()}")
+            
+            # Удаляем записи за этот день (по левой границе from_date)
+            deleted = db.query(Transaction).filter(
+                Transaction.date_typed >= day_date,
+                Transaction.date_typed < day_date_end
+            ).delete(synchronize_session=False)
+            
+            if deleted > 0:
+                logger.debug(f"Удалено {deleted} транзакций за {day_date.date()}")
+            
+            # Получаем данные транзакций за день
             transactions_data = await self.service.get_transactions(from_date, to_date)
             
             if not transactions_data:
                 logger.warning("Не удалось получить данные транзакций")
-                return {"created": 0, "updated": 0, "errors": 0}
+                db.commit()
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": deleted}
             
             parsed_data = self.parser.parse_transactions(transactions_data)
             
             if not parsed_data:
                 logger.warning("Нет данных для синхронизации транзакций")
-                return {"created": 0, "updated": 0, "errors": 0}
+                db.commit()
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": deleted}
             
-            created = 0
-            updated = 0
-            errors = 0
-            didnt_find_unique_key = 0
+            # Предзагружаем организации для оптимизации
+            department_codes = set(t.get("department_code") for t in parsed_data if t.get("department_code"))
+            organizations_map = {}
+            if department_codes:
+                orgs = db.query(Organization).filter(Organization.code.in_(department_codes)).all()
+                organizations_map = {org.code: org.id for org in orgs}
             
+            # Подготавливаем данные для bulk insert
+            now = datetime.now()
+            bulk_data = []
             for trans_data in parsed_data:
                 try:
-                    # Ищем существующую транзакцию по составному ключу
-                    existing_trans = self._find_existing_transaction(db, trans_data)
-                    
-                    if not existing_trans:
-                        # logger.warning(f"Не удалось найти уникальный ключ для транзакции: order_id={trans_data.get('order_id')}, order_num={trans_data.get('order_num')}, product_id={trans_data.get('product_id')}, date_time={trans_data.get('date_time')}, amount={trans_data.get('amount')}")
-                        didnt_find_unique_key += 1
-                    else:
-                        logger.debug(f"Найдена существующая транзакция для обновления")
-                    
                     # Ищем организацию по Department.Code
                     department_code = trans_data.get("department_code")
-                    organization_id = None
-                    if department_code:
-                        organization = db.query(Organization).filter(
-                            Organization.code == department_code
-                        ).first()
-                        if organization:
-                            organization_id = organization.id
+                    organization_id = organizations_map.get(department_code) if department_code else None
                     
-                    # Добавляем organization_id в данные
-                    trans_data["organization_id"] = organization_id
-                    
-                    # Убираем поля, которые не должны обновляться
-                    trans_data.pop("created_at", None)
-                    
-                    if existing_trans:
-                        for key, value in trans_data.items():
-                            setattr(existing_trans, key, value)
-                        existing_trans.updated_at = datetime.now()
-                        updated += 1
-                    else:
-                        trans_data["created_at"] = datetime.now()
-                        trans_data["updated_at"] = datetime.now()
-                        new_trans = Transaction(**trans_data)
-                        db.add(new_trans)
-                        created += 1
-                        
+                    # Подготавливаем данные для bulk insert
+                    bulk_item = dict(trans_data)
+                    bulk_item["organization_id"] = organization_id
+                    bulk_item.pop("created_at", None)
+                    bulk_item["created_at"] = now
+                    bulk_item["updated_at"] = now
+                    bulk_data.append(bulk_item)
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации транзакции order_id={trans_data.get('order_id', 'Unknown')}, order_num={trans_data.get('order_num', 'Unknown')}: {e}")
-                    db.rollback()  # Откатываем транзакцию при ошибке
-                    errors += 1
+                    logger.error(f"Ошибка подготовки транзакции order_id={trans_data.get('order_id', 'Unknown')}, order_num={trans_data.get('order_num', 'Unknown')}: {e}")
             
-            db.commit()
-            logger.info(f"Синхронизация транзакций завершена: создано {created}, обновлено {updated}, ошибок {errors}")
-            return {"created": created, "updated": updated, "errors": errors, "didnt_find_unique_key": didnt_find_unique_key}
+            # Bulk insert с batch commits (каждые 5000 записей)
+            created = 0
+            errors = 0
+            batch_size = 5000
+            
+            for i in range(0, len(bulk_data), batch_size):
+                batch = bulk_data[i:i + batch_size]
+                try:
+                    db.bulk_insert_mappings(Transaction, batch)
+                    db.commit()
+                    created += len(batch)
+                    logger.debug(f"Вставлено {len(batch)} транзакций (всего {created}/{len(bulk_data)})")
+                except Exception as e:
+                    logger.error(f"Ошибка bulk insert транзакций (batch {i//batch_size + 1}): {e}")
+                    db.rollback()
+                    # Пробуем вставить по одной записи из батча для определения проблемных
+                    for item in batch:
+                        try:
+                            db.bulk_insert_mappings(Transaction, [item])
+                            db.commit()
+                            created += 1
+                        except Exception as item_error:
+                            logger.error(f"Ошибка вставки транзакции order_id={item.get('order_id', 'Unknown')}, order_num={item.get('order_num', 'Unknown')}: {item_error}")
+                            errors += 1
+                            db.rollback()
+            
+            logger.info(f"Синхронизация транзакций завершена: создано {created}, удалено {deleted}, ошибок {errors}")
+            return {"created": created, "updated": 0, "errors": errors, "deleted": deleted}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации транзакций: {e}")
             db.rollback()
-            return {"created": 0, "updated": 0, "errors": 1}
+            return {"created": 0, "updated": 0, "errors": 1, "deleted": 0}
 
     def _normalize_value_for_key(self, value: Any) -> Any:
         """Нормализует значение для использования в уникальном ключе"""
@@ -1178,144 +1202,102 @@ class IikoSync:
         return tuple(key_values)
 
     async def sync_sales(self, db: Session, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Dict[str, int]:
-        """Синхронизация продаж с проверкой на дубликаты (оптимизированная версия)"""  
+        """Синхронизация продаж с удалением записей за день (from_date) перед записью"""  
         try:
+            if not from_date or not to_date:
+                logger.warning("Не указаны даты для синхронизации продаж")
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": 0}
+            
+            # Нормализуем дату (убираем время, оставляем только дату)
+            day_date = from_date.replace(hour=0, minute=0, second=0, microsecond=0).date()
+            day_date_end = day_date + timedelta(days=1)
+            
+            logger.info(f"Синхронизация продаж за {day_date}")
+            
+            # Удаляем записи за этот день (по левой границе from_date)
+            # Для Sales используем open_date_typed (Date поле)
+            deleted = db.query(Sales).filter(
+                Sales.open_date_typed >= day_date,
+                Sales.open_date_typed < day_date_end
+            ).delete(synchronize_session=False)
+            
+            if deleted > 0:
+                logger.debug(f"Удалено {deleted} продаж за {day_date}")
+            
+            # Получаем данные продаж за день
             sales_data = await self.service.get_sales(from_date, to_date)
             
             if not sales_data:
                 logger.warning("Не удалось получить данные продаж")
-                return {"created": 0, "updated": 0, "errors": 0, "skipped_duplicates": 0}
+                db.commit()
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": deleted}
             
             parsed_data = self.parser.parse_sales(sales_data)
             
             if not parsed_data:
                 logger.warning("Нет данных для синхронизации продаж")
-                return {"created": 0, "updated": 0, "errors": 0, "skipped_duplicates": 0}
+                db.commit()
+                return {"created": 0, "updated": 0, "errors": 0, "deleted": deleted}
             
-            # Получаем количество полей для логирования
-            exclude_fields = {'id', 'created_at', 'updated_at', 'is_active', 'commission'}
-            total_fields = len([c.name for c in Sales.__table__.columns if c.name not in exclude_fields])
-            logger.info(f"Загрузка существующих продаж за период для проверки дубликатов (используется {total_fields} полей)...")
+            # Предзагружаем организации для оптимизации
+            department_codes = set(s.get("department_code") for s in parsed_data if s.get("department_code"))
+            organizations_map = {}
+            if department_codes:
+                orgs = db.query(Organization).filter(Organization.code.in_(department_codes)).all()
+                organizations_map = {org.code: org.id for org in orgs}
             
-            # ОПТИМИЗАЦИЯ: Загружаем все существующие продажи за период одним запросом
-            # Определяем временной диапазон из parsed_data
-            open_times = []
-            for s in parsed_data:
-                ot = s.get("open_time")
-                if ot:
-                    # Преобразуем строку в datetime, если это строка
-                    if isinstance(ot, str):
-                        try:
-                            ot = datetime.fromisoformat(ot.replace('Z', '+00:00'))
-                        except Exception as e:
-                            logger.warning(f"Не удалось преобразовать open_time '{ot}' в datetime: {e}")
-                            continue
-                    if isinstance(ot, datetime):
-                        open_times.append(ot)
-            
-            if open_times:
-                min_open_time = min(open_times)
-                max_open_time = max(open_times)
-                
-                # Загружаем существующие записи за период с запасом ±1 день
-                existing_sales_query = db.query(Sales).filter(
-                    Sales.open_time.between(
-                        min_open_time - timedelta(days=1),
-                        max_open_time + timedelta(days=1)
-                    )
-                )
-                existing_sales = existing_sales_query.all()
-                
-                # Создаем set из уникальных ключей существующих записей
-                existing_keys = set()
-                for sale in existing_sales:
-                    sale_dict = {
-                        "item_sale_event_id": sale.item_sale_event_id,
-                        "organization_id": sale.organization_id,
-                        "order_id": sale.order_id,
-                        "open_time": sale.open_time,
-                        "close_time": sale.close_time,
-                        "precheque_time": sale.precheque_time,
-                        "dish_id": sale.dish_id,
-                        "dish_amount_int": sale.dish_amount_int,
-                        "dish_sum_int": sale.dish_sum_int,
-                        "dish_return_sum": sale.dish_return_sum,
-                        "dish_discount_sum_int": sale.dish_discount_sum_int,
-                        "increase_sum": sale.increase_sum,
-                        "discount_sum": sale.discount_sum,
-                        "full_sum": sale.full_sum,
-                        "session_id": sale.session_id,
-                        "table_num": sale.table_num,
-                        "waiter_name_id": sale.waiter_name_id,
-                        "order_waiter_id": sale.order_waiter_id,
-                        "cashier_id": sale.cashier_id,
-                        "cooking_place_id": sale.cooking_place_id,
-                        "payment_transaction_ids": sale.payment_transaction_ids,
-                        "payment_transaction_id": sale.payment_transaction_id
-                    }
-                    key = self._create_sale_unique_key(sale_dict)
-                    existing_keys.add(key)
-                
-                logger.info(f"Загружено {len(existing_sales)} существующих записей продаж для проверки")
-            else:
-                existing_keys = set()
-                logger.info("Нет временных меток для оптимизации, проверка будет полной")
-            
-            created = 0
-            updated = 0
-            errors = 0
-            skipped_duplicates = 0
-            
+            # Подготавливаем данные для bulk insert
+            now = datetime.now()
+            bulk_data = []
             for sale_data in parsed_data:
                 try:
                     # Ищем организацию по Department.Code
                     department_code = sale_data.get("department_code")
-                    organization_id = None
-                    if department_code:
-                        organization = db.query(Organization).filter(
-                            Organization.code == department_code
-                        ).first()
-                        if organization:
-                            organization_id = organization.id
+                    organization_id = organizations_map.get(department_code) if department_code else None
                     
-                    # Добавляем organization_id в данные
-                    sale_data["organization_id"] = organization_id
-                    
-                    # Создаем уникальный ключ для новой записи
-                    new_key = self._create_sale_unique_key(sale_data)
-                    
-                    # Проверяем существование в set (O(1) - очень быстро!)
-                    if new_key in existing_keys:
-                        # Запись уже существует - пропускаем
-                        skipped_duplicates += 1
-                        logger.debug(
-                            f"Пропущен дубликат продажи: item_sale_event_id={sale_data.get('item_sale_event_id')}, "
-                            f"order_id={sale_data.get('order_id')}, dish_id={sale_data.get('dish_id')}, "
-                            f"open_time={sale_data.get('open_time')}, full_sum={sale_data.get('full_sum')}"
-                        )
-                    else:
-                        # Создаем новую запись продажи
-                        sale_data["created_at"] = datetime.now()
-                        sale_data["updated_at"] = datetime.now()
-                        new_sale = Sales(**sale_data)
-                        db.add(new_sale)
-                        # Добавляем ключ в set, чтобы избежать дубликатов в текущей партии
-                        existing_keys.add(new_key)
-                        created += 1
-                        
+                    # Подготавливаем данные для bulk insert
+                    bulk_item = dict(sale_data)
+                    bulk_item["organization_id"] = organization_id
+                    bulk_item.pop("created_at", None)
+                    bulk_item["created_at"] = now
+                    bulk_item["updated_at"] = now
+                    bulk_data.append(bulk_item)
                 except Exception as e:
-                    logger.error(f"Ошибка синхронизации продажи {sale_data.get('item_sale_event_id', 'Unknown')}: {e}")
-                    db.rollback()  # Откатываем транзакцию при ошибке
-                    errors += 1
+                    logger.error(f"Ошибка подготовки продажи {sale_data.get('item_sale_event_id', 'Unknown')}: {e}")
             
-            db.commit()
-            logger.info(f"Синхронизация продаж завершена: создано {created}, пропущено дубликатов {skipped_duplicates}, ошибок {errors}")
-            return {"created": created, "updated": 0, "errors": errors, "skipped_duplicates": skipped_duplicates}
+            # Bulk insert с batch commits (каждые 1000 записей)
+            created = 0
+            errors = 0
+            batch_size = 1000
+            
+            for i in range(0, len(bulk_data), batch_size):
+                batch = bulk_data[i:i + batch_size]
+                try:
+                    db.bulk_insert_mappings(Sales, batch)
+                    db.commit()
+                    created += len(batch)
+                    logger.debug(f"Вставлено {len(batch)} продаж (всего {created}/{len(bulk_data)})")
+                except Exception as e:
+                    logger.error(f"Ошибка bulk insert продаж (batch {i//batch_size + 1}): {e}")
+                    db.rollback()
+                    # Пробуем вставить по одной записи из батча для определения проблемных
+                    for item in batch:
+                        try:
+                            db.bulk_insert_mappings(Sales, [item])
+                            db.commit()
+                            created += 1
+                        except Exception as item_error:
+                            logger.error(f"Ошибка вставки продажи item_sale_event_id={item.get('item_sale_event_id', 'Unknown')}: {item_error}")
+                            errors += 1
+                            db.rollback()
+            
+            logger.info(f"Синхронизация продаж завершена: создано {created}, удалено {deleted}, ошибок {errors}")
+            return {"created": created, "updated": 0, "errors": errors, "deleted": deleted}
             
         except Exception as e:
             logger.error(f"Ошибка синхронизации продаж: {e}")
             db.rollback()
-            return {"created": 0, "updated": 0, "errors": 1, "skipped_duplicates": 0}
+            return {"created": 0, "updated": 0, "errors": 1, "deleted": 0}
 
     async def sync_accounts(self, db: Session) -> Dict[str, int]:
         """Синхронизация счетов (accounts) из Server API"""
