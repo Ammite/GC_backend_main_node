@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import Optional
+import asyncio
 from utils.cache import cached
+from utils.async_db_executor import gather_db_queries, run_in_thread
 from schemas.analytics import (
     AnalyticsResponse,
     ExpensesAnalyticsResponse,
@@ -32,7 +34,7 @@ from models.transaction import Transaction
 
 
 # @cached(ttl_seconds=300, key_prefix="analytics")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
-def get_analytics(
+async def get_analytics(
     db: Session,
     date: Optional[str] = None,
     period: Optional[str] = "day",
@@ -54,15 +56,19 @@ def get_analytics(
     target_date = parse_date(date)
     start_date, end_date, previous_start, previous_end = get_period_dates(target_date, period)
     
-    # Получаем заказы за текущий и предыдущий период
-    orders = get_orders_for_period(db, start_date, end_date, organization_id)
-    previous_orders = get_orders_for_period(db, previous_start, previous_end, organization_id)
+    # Параллельно получаем все данные
+    orders, previous_orders, current_revenue_data, previous_revenue_data, expenses_result, returns_sum, cost_of_goods_dict, employee_stats = await gather_db_queries(
+        lambda: get_orders_for_period(db, start_date, end_date, organization_id),
+        lambda: get_orders_for_period(db, previous_start, previous_end, organization_id),
+        lambda: get_revenue_by_category(db, start_date, end_date, organization_id),
+        lambda: get_revenue_by_category(db, previous_start, previous_end, organization_id),
+        lambda: get_expenses_from_transactions(db, start_date, end_date, organization_id, ['EXPENSES']),
+        lambda: get_returns_sum_from_sales(db, start_date, end_date, organization_id),
+        lambda: get_cost_of_goods_from_sales(db, start_date, end_date, organization_id),
+        lambda: get_top_employees_by_revenue(db, start_date, end_date, organization_id, limit=10)
+    )
     
-    # Считаем метрики
-    
-    current_revenue_data = get_revenue_by_category(db, start_date, end_date, organization_id)
     current_revenue = current_revenue_data["total"]
-    previous_revenue_data = get_revenue_by_category(db, previous_start, previous_end, organization_id)
     previous_revenue = previous_revenue_data["total"]
     
     current_checks = len(orders)
@@ -93,9 +99,6 @@ def get_analytics(
         )
     ]
     
-    # Получаем реальные данные о расходах из транзакций
-    expense_types = ['EXPENSES']
-    expenses_result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
     total_expenses = expenses_result['expenses_amount']
     
     # Формируем отчеты (расходы)
@@ -110,11 +113,6 @@ def get_analytics(
     ]
     
     # Метрики заказов
-    # Получаем возвраты из Sales
-    returns_sum = get_returns_sum_from_sales(db, start_date, end_date, organization_id)
-    
-    # Получаем себестоимость проданных товаров (теперь возвращает словарь с категориями)
-    cost_of_goods_dict = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
     cost_of_goods = cost_of_goods_dict.get("total", 0.0)
     
     order_metrics = [
@@ -152,8 +150,6 @@ def get_analytics(
     ]
     
     # Топ сотрудников по выручке
-    employee_stats = get_top_employees_by_revenue(db, start_date, end_date, organization_id, limit=10)
-    
     employees_analytics = []
     for waiter_name, waiter_id, employee_id, total_revenue in employee_stats:
         employees_analytics.append(
@@ -177,7 +173,7 @@ def get_analytics(
 
 
 # @cached(ttl_seconds=300, key_prefix="analytics_expenses")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
-def get_expenses_analytics(
+async def get_expenses_analytics(
     db: Session,
     date: Optional[str] = None,
     period: Optional[str] = "day",
@@ -201,7 +197,7 @@ def get_expenses_analytics(
     
     # Получаем расходы из транзакций
     expense_types = ['EXPENSES']
-    result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
+    result = await run_in_thread(lambda: get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types))
     
     return ExpensesAnalyticsResponse(
         success=True,

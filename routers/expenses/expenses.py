@@ -14,7 +14,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/expenses", response_model=ExpensesAnalyticsResponse)
-def get_expenses_endpoint(
+async def get_expenses_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY"),
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -44,7 +44,7 @@ def get_expenses_endpoint(
     - DEBTS_OF_EMPLOYEES - Долги сотрудников
     """
     try:
-        expenses = get_expenses_analytics(
+        expenses = await get_expenses_analytics(
             db=db,
             date=date,
             period=period,

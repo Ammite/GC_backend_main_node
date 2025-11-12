@@ -14,7 +14,7 @@ router = APIRouter(prefix="", tags=["reports"])
 
 
 @router.get("/analytics", response_model=AnalyticsResponse)
-def get_analytics_endpoint(
+async def get_analytics_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY"),
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -38,7 +38,7 @@ def get_analytics_endpoint(
     - Сотрудники: топ по выручке
     """
     try:
-        analytics = get_analytics(
+        analytics = await get_analytics(
             db=db,
             date=date,
             period=period,

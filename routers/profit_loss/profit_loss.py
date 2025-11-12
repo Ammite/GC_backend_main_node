@@ -14,7 +14,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/profit-loss", response_model=ProfitLossResponse)
-def get_profit_loss_endpoint(
+async def get_profit_loss_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY"),
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -45,7 +45,7 @@ def get_profit_loss_endpoint(
     ```
     """
     try:
-        report = get_profit_loss_report(
+        report = await get_profit_loss_report(
             db=db,
             date=date,
             period=period,
