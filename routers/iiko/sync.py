@@ -261,6 +261,14 @@ async def sync_menu(
         invalidate_cache("goods")
         logger.info("Кэш меню и товаров инвалидирован")
         
+        # Оптимизируем индексы после синхронизации меню
+        try:
+            from utils.db_indexes import optimize_indexes
+            optimize_indexes(db)
+            logger.info("Индексы оптимизированы после синхронизации меню")
+        except Exception as e:
+            logger.warning(f"Не удалось оптимизировать индексы: {e}")
+        
         return {
             "success": True,
             "message": "Синхронизация меню завершена",
@@ -286,6 +294,14 @@ async def sync_all(
     try:
         logger.info(f"Запуск полной синхронизации для организации: {organization_id}")
         result = await iiko_sync.sync_all(db, organization_id)
+        
+        # Оптимизируем индексы после полной синхронизации
+        try:
+            from utils.db_indexes import optimize_indexes
+            optimize_indexes(db)
+            logger.info("Индексы оптимизированы после полной синхронизации")
+        except Exception as e:
+            logger.warning(f"Не удалось оптимизировать индексы: {e}")
         
         return {
             "success": True,
@@ -362,7 +378,7 @@ async def sync_transactions(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Синхронизация транзакций с iiko API
+    Синхронизация транзакций с iiko API (последовательная обработка дней из-за блокирующей авторизации)
     """
     try:
         logger.info(f"Запуск синхронизации транзакций для организации")
@@ -375,7 +391,7 @@ async def sync_transactions(
             "created": 0,
             "updated": 0,
             "errors": 0,
-            "didnt_find_unique_key": 0
+            "deleted": 0
         }
         
         # Преобразуем в datetime для работы
@@ -387,6 +403,7 @@ async def sync_transactions(
         current_date = from_dt.date()
         end_date = to_dt.date()
         
+        # Последовательная обработка дней (авторизация блокирующая)
         while current_date < end_date:
             # Для получения данных за один день передаем:
             # from = текущий день, to = следующий день
@@ -400,16 +417,24 @@ async def sync_transactions(
             result["created"] += sync_result.get("created", 0)
             result["updated"] += sync_result.get("updated", 0)
             result["errors"] += sync_result.get("errors", 0)
-            result["didnt_find_unique_key"] += sync_result.get("didnt_find_unique_key", 0)
+            result["deleted"] += sync_result.get("deleted", 0)
             
             logger.info(
                 f"День {current_date.strftime('%Y-%m-%d')}: создано {sync_result.get('created', 0)}, "
-                f"обновлено {sync_result.get('updated', 0)}, "
+                f"удалено {sync_result.get('deleted', 0)}, "
                 f"ошибок {sync_result.get('errors', 0)}"
             )
             
             # Переходим к следующему дню
             current_date += timedelta(days=1)
+        
+        # Оптимизируем индексы после массовой синхронизации
+        try:
+            from utils.db_indexes import optimize_indexes
+            optimize_indexes(db)
+            logger.info("Индексы оптимизированы после синхронизации транзакций")
+        except Exception as e:
+            logger.warning(f"Не удалось оптимизировать индексы: {e}")
         
         return {
             "success": True,
@@ -433,7 +458,7 @@ async def sync_sales(
     db: Session = Depends(get_db)
 ) -> Dict[str, Any]:
     """
-    Синхронизация продаж с iiko API
+    Синхронизация продаж с iiko API (последовательная обработка дней из-за блокирующей авторизации)
     2025-09-30T00:00:00.000
     """
     try:
@@ -447,7 +472,7 @@ async def sync_sales(
             "created": 0,
             "updated": 0,
             "errors": 0,
-            "skipped_duplicates": 0
+            "deleted": 0
         }
         # Преобразуем в datetime для работы
         from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
@@ -458,6 +483,7 @@ async def sync_sales(
         current_date = from_dt.date()
         end_date = to_dt.date()
         
+        # Последовательная обработка дней (авторизация блокирующая)
         while current_date < end_date:
             # Для получения данных за один день передаем:
             # from = текущий день, to = следующий день
@@ -471,11 +497,11 @@ async def sync_sales(
             result["created"] += sync_result.get("created", 0)
             result["updated"] += sync_result.get("updated", 0)
             result["errors"] += sync_result.get("errors", 0)
-            result["skipped_duplicates"] = result.get("skipped_duplicates", 0) + sync_result.get("skipped_duplicates", 0)
+            result["deleted"] += sync_result.get("deleted", 0)
             
             logger.info(
                 f"День {current_date.strftime('%Y-%m-%d')}: создано {sync_result.get('created', 0)}, "
-                f"пропущено дубликатов {sync_result.get('skipped_duplicates', 0)}, "
+                f"удалено {sync_result.get('deleted', 0)}, "
                 f"ошибок {sync_result.get('errors', 0)}"
             )
             
@@ -487,6 +513,14 @@ async def sync_sales(
         invalidate_cache("analytics")
         invalidate_cache("popular_dishes")
         logger.info("Кэш отчетов и аналитики инвалидирован")
+        
+        # Оптимизируем индексы после массовой синхронизации
+        try:
+            from utils.db_indexes import optimize_indexes
+            optimize_indexes(db)
+            logger.info("Индексы оптимизированы после синхронизации продаж")
+        except Exception as e:
+            logger.warning(f"Не удалось оптимизировать индексы: {e}")
         
         return {
             "success": True,

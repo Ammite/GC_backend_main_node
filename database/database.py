@@ -32,3 +32,16 @@ def init_db():
     )
     Base.metadata.create_all(bind=engine)
     print("Database tables created successfully!")
+    
+    # Создаем индексы для оптимизации запросов
+    try:
+        from utils.db_indexes import create_indexes
+        from database.database import SessionLocal
+        db = SessionLocal()
+        try:
+            result = create_indexes(db)
+            print(f"Database indexes created: {result.get('created', 0)} created, {result.get('skipped', 0)} skipped")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Warning: Could not create indexes: {e}")
