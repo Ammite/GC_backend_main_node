@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import Optional
+import asyncio
+from utils.async_db_executor import gather_db_queries
 from schemas.profit_loss import (
     ProfitLossResponse,
     RevenueByCategory,
@@ -18,7 +20,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_profit_loss_report(
+async def get_profit_loss_report(
     db: Session,
     date: Optional[str] = None,
     period: Optional[str] = "day",
@@ -46,8 +48,14 @@ def get_profit_loss_report(
     logger.info(f"   ⏱️ Period: {period}")
     logger.info(f"   🏢 Organization ID: {organization_id}")
     
-    # 1. Получаем доходы по категориям (из Sales, поле dish_discount_sum_int)
-    revenue_data = get_revenue_by_category(db, start_date, end_date, organization_id)
+    # Параллельно получаем все данные
+    revenue_data, expenses_result, cost_of_goods_dict, bank_commission = await gather_db_queries(
+        lambda: get_revenue_by_category(db, start_date, end_date, organization_id),
+        lambda: get_expenses_from_transactions(db, start_date, end_date, organization_id, ['EXPENSES']),
+        lambda: get_cost_of_goods_from_sales(db, start_date, end_date, organization_id),
+        lambda: get_bank_commission_total(db, start_date, end_date, organization_id)
+    )
+    
     total_revenue = revenue_data["total"]
     
     revenue_by_category = [
@@ -58,9 +66,6 @@ def get_profit_loss_report(
     
     logger.info(f"Total revenue: {total_revenue}")
     
-    # 2. Получаем расходы (из Transactions)
-    expense_types = ['EXPENSES']
-    expenses_result = get_expenses_from_transactions(db, start_date, end_date, organization_id, expense_types)
     total_expenses = expenses_result["expenses_amount"]
     
     expenses_by_type = [
@@ -74,8 +79,6 @@ def get_profit_loss_report(
     
     logger.info(f"Total expenses: {total_expenses}")
     
-    # 3. Получаем себестоимость проданных товаров (из Transactions, теперь возвращает словарь с категориями)
-    cost_of_goods_dict = get_cost_of_goods_from_sales(db, start_date, end_date, organization_id)
     cost_of_goods = cost_of_goods_dict.get("total", 0.0)
     logger.info(f"📦 Cost of goods: {cost_of_goods} (by categories: {cost_of_goods_dict})")
     
@@ -96,9 +99,7 @@ def get_profit_loss_report(
                 )
             )
     
-    # 4. Получаем комиссии банка (из d_order.bank_commission)
     logger.info(f"📞 Calling get_bank_commission_total with: start={start_date}, end={end_date}, org={organization_id}")
-    bank_commission = get_bank_commission_total(db, start_date, end_date, organization_id)
     logger.info(f"💰 Bank commission returned: {bank_commission}")
     
     expenses_by_type.append(

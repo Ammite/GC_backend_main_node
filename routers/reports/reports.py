@@ -14,7 +14,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/orders", response_model=OrderReportsResponse)
-def get_order_reports_endpoint(
+async def get_order_reports_endpoint(
     date: str = Query(..., description="Дата в формате DD.MM.YYYY"),
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -36,7 +36,7 @@ def get_order_reports_endpoint(
     - Популярные и непопулярные блюда
     """
     try:
-        reports = get_order_reports(
+        reports = await get_order_reports(
             db=db,
             date=date,
             period=period,
@@ -49,7 +49,7 @@ def get_order_reports_endpoint(
 
 
 @router.get("/moneyflow", response_model=MoneyFlowResponse)
-def get_moneyflow_reports_endpoint(
+async def get_moneyflow_reports_endpoint(
     date: str = Query(..., description="Дата в формате DD.MM.YYYY"),
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -71,7 +71,7 @@ def get_moneyflow_reports_endpoint(
     - Доходы
     """
     try:
-        reports = get_moneyflow_reports(
+        reports = await get_moneyflow_reports(
             db=db,
             date=date,
             period=period,
@@ -84,7 +84,7 @@ def get_moneyflow_reports_endpoint(
 
 
 @router.get("/sales-dynamics", response_model=SalesDynamicsResponse)
-def get_sales_dynamics_endpoint(
+async def get_sales_dynamics_endpoint(
     days: Optional[int] = Query(default=7, description="Количество дней для анализа (по умолчанию 7)"),
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
@@ -115,7 +115,7 @@ def get_sales_dynamics_endpoint(
     - Количество чеков считается по уникальным `order_id`
     """
     try:
-        report = get_sales_dynamics(
+        report = await get_sales_dynamics(
             db=db,
             days=days,
             date=date,
