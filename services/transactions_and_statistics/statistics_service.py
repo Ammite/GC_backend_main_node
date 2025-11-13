@@ -1032,7 +1032,7 @@ def get_expenses_from_transactions(
         Transaction.date_typed <= end_date.date(),
         # Transaction.is_active == True,
         # Transaction.transaction_side == 'DEBIT',
-        # Transaction.contr_account_name == 'Зарплата'
+        Transaction.contr_account_name == 'Зарплата'
     )
     
     # Фильтруем по организации если указана
@@ -1048,8 +1048,8 @@ def get_expenses_from_transactions(
     
     salary_transactions = salary_transactions_query.all()
 
-    logger.info(f"Salary transactions: {salary_transactions}")
-    logger.info(f"Transactions: {transactions}")
+    # logger.info(f"Salary transactions: {salary_transactions}")
+    # logger.info(f"Transactions: {transactions}")
 
     transactions.extend(salary_transactions)
     
