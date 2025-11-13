@@ -1030,9 +1030,9 @@ def get_expenses_from_transactions(
         Transaction.account_id == '13000ead-41f0-d569-d85c-704242cc91f5',
         Transaction.date_typed >= start_date.date(),
         Transaction.date_typed <= end_date.date(),
-        Transaction.is_active == True,
-        Transaction.transaction_side == 'DEBIT',
-        Transaction.contr_account_name == 'Зарплата'
+        # Transaction.is_active == True,
+        # Transaction.transaction_side == 'DEBIT',
+        # Transaction.contr_account_name == 'Зарплата'
     )
     
     # Фильтруем по организации если указана
