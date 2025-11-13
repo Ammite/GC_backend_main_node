@@ -412,6 +412,7 @@ def get_revenue_by_category(
     Учитывает: dish_sum_int (базовая цена), discount_sum (скидки), increase_sum (наценки/обслуживание)
     Формула: Выручка = dish_sum_int - discount_sum + increase_sum
     Также включает выручку с фабрики из таблицы transactions
+    Включает дополнительные доходы из accounts_list с типом OTHER_INCOME, группированные по названию счета
     
     Args:
         db: сессия БД
@@ -420,7 +421,7 @@ def get_revenue_by_category(
         organization_id: ID организации (фильтр)
         
     Returns:
-        Словарь с доходами по категориям: {"Кухня": amount, "Бар": amount, "Наценка": amount, "Фабрика": amount, "total": amount}
+        Словарь с доходами по категориям: {"Кухня": amount, "Бар": amount, "Наценка": amount, "Фабрика": amount, "Название счета OTHER_INCOME": amount, "total": amount}
     """
     # Базовый фильтр для всех запросов
     base_filter = and_(
@@ -546,18 +547,72 @@ def get_revenue_by_category(
     # Выручка с фабрики
     factory_revenue = get_factory_revenue(db, start_date, end_date, organization_id)
     
-    # Общая выручка
-    total_revenue = round(overall_revenue + additional_revenue + factory_revenue, 2)
+    # Дополнительные доходы (OTHER_INCOME)
+    # Получаем аккаунты с типом OTHER_INCOME
+    other_income_accounts = db.query(Account).filter(
+        and_(
+            Account.type == 'OTHER_INCOME',
+            Account.deleted == False
+        )
+    ).all()
     
-    return {
+    # Извлекаем iiko_id из аккаунтов
+    other_income_account_ids = [account.iiko_id for account in other_income_accounts if account.iiko_id]
+    
+    # Приводим к датам для сравнения с date_typed
+    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
+    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
+    
+    # Получаем транзакции по этим account_id, группируем по названию счета
+    other_income_revenue = {}
+    total_other_income = 0.0
+    
+    if other_income_account_ids:
+        other_income_query = db.query(
+            Transaction.account_name,
+            func.sum(func.coalesce(Transaction.sum_incoming, 0) - func.coalesce(Transaction.sum_outgoing, 0)).label('total_income')
+        ).filter(
+            and_(
+                Transaction.account_id.in_(other_income_account_ids),
+                Transaction.date_typed >= start_date_only,
+                Transaction.date_typed <= end_date_only,
+                Transaction.is_active == True
+            )
+        )
+        
+        if organization_id:
+            other_income_query = other_income_query.filter(Transaction.organization_id == organization_id)
+        
+        # Группируем по названию счета
+        results = other_income_query.group_by(Transaction.account_name).all()
+        
+        for row in results:
+            account_name = row.account_name or "Прочие доходы"
+            income = round(float(row.total_income or 0), 2)
+            if income > 0:  # Добавляем только положительные доходы
+                other_income_revenue[account_name] = income
+                total_other_income += income
+    
+    # Общая выручка (включая дополнительные доходы)
+    total_revenue = round(overall_revenue + additional_revenue + factory_revenue + total_other_income, 2)
+    
+    # Формируем итоговый словарь
+    result = {
         "Кухня": kitchen_base,
         "Бар": bar_base,
         "Прочее": other_revenue,
         "Наценка (обслуживание)": total_increase,
         "Дополнительная выручка": additional_revenue,
         "Фабрика": factory_revenue,
-        "total": total_revenue
     }
+    
+    # Добавляем дополнительные доходы как категории
+    result.update(other_income_revenue)
+    
+    # Добавляем общую сумму
+    result["total"] = total_revenue
+    
+    return result
 
 
 def get_revenue_by_menu_category_and_payment(
