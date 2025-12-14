@@ -570,7 +570,7 @@ def get_revenue_by_category(
     if other_income_account_ids:
         other_income_query = db.query(
             Transaction.account_name,
-            func.sum(func.coalesce(Transaction.sum_incoming, 0) - func.coalesce(Transaction.sum_outgoing, 0)).label('total_income')
+            (func.sum(func.coalesce(Transaction.sum_incoming, 0)) - func.sum(func.coalesce(Transaction.sum_outgoing, 0))).label('total_income')
         ).filter(
             and_(
                 Transaction.account_id.in_(other_income_account_ids),
@@ -592,6 +592,9 @@ def get_revenue_by_category(
             if income > 0:  # Добавляем только положительные доходы
                 other_income_revenue[account_name] = income
                 total_other_income += income
+            if income <= 0:
+                other_income_revenue[account_name] = abs(income)
+                total_other_income += abs(income)
     
     # Общая выручка (включая дополнительные доходы)
     total_revenue = round(overall_revenue + additional_revenue + factory_revenue + total_other_income, 2)

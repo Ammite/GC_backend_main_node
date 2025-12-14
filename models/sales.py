@@ -182,7 +182,7 @@ class Sales(Base):
     bonus_type = Column(String(50), nullable=True)  # Bonus.Type
     
     # Фискальный чек
-    fiscal_cheque_number = Column(Integer, nullable=True)  # FiscalChequeNumber
+    fiscal_cheque_number = Column(String(255), nullable=True)  # FiscalChequeNumber может приходить как "19758, 23"
     
     # Валюты
     currencies_currency = Column(String(50), nullable=True)  # Currencies.Currency

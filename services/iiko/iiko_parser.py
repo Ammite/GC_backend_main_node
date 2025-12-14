@@ -54,6 +54,33 @@ def _extract_currency_sum(value: Any) -> Optional[float]:
     return _extract_numeric_value(value)
 
 
+def _extract_fiscal_cheque_number(value: Any) -> Optional[str]:
+    """
+    Приводит FiscalChequeNumber к строке.
+    Поддерживает числа, строки и коллекции чисел/строк (соединяются через запятую).
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        # убираем .0 у целых
+        return str(int(value)) if float(value).is_integer() else str(value)
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple, set)):
+        # Список значений -> строка через запятую
+        cleaned = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, (int, float)):
+                cleaned.append(str(int(item)) if float(item).is_integer() else str(item))
+            else:
+                cleaned.append(str(item).strip())
+        return ", ".join(cleaned) if cleaned else None
+    # Другие типы – пробуем строковое представление
+    return str(value).strip()
+
+
 class IikoParser:
     """Класс для парсинга данных из iiko API"""
     
@@ -1046,7 +1073,7 @@ class IikoParser:
                 "bonus_type": sale.get("Bonus.Type"),
                 
                 # Фискальный чек
-                "fiscal_cheque_number": sale.get("FiscalChequeNumber"),
+                "fiscal_cheque_number": _extract_fiscal_cheque_number(sale.get("FiscalChequeNumber")),
                 
                 # Валюты
                 "currencies_currency": sale.get("Currencies.Currency"),

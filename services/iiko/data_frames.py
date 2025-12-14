@@ -340,7 +340,6 @@ iiko_sales_data_frame = {
         "VAT.Percent",
         "ProductCostBase.Profit",
         "ProductCostBase.MarkUp",
-        "FiscalChequeNumber",
         "OrderNum",
         "Cooking.FeedLateTime.Avg",
         "Cooking.CookingLateTime.Avg",

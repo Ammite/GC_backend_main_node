@@ -381,6 +381,13 @@ async def sync_transactions(
     Синхронизация транзакций с iiko API (последовательная обработка дней из-за блокирующей авторизации)
     """
     try:
+        logger.info("Запуск синхронизации счетов")
+        result = await iiko_sync.sync_accounts(db)
+        logger.info(f"Синхронизация счетов завершена: {result}")
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации счетов: {e}")
+
+    try:
         logger.info(f"Запуск синхронизации транзакций для организации")
         if from_date is None:
             from_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d") + "T00:00:00.000"
