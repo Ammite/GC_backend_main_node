@@ -1,0 +1,33 @@
+{
+  "value": {
+    "expenses_amount": 6252.15,
+    "data": [
+      {
+        "transaction_type": "EMPLOYEES_LIABILITY",
+        "transaction_name": "Текущие расчеты с сотрудниками",
+        "transaction_amount": 6252.15,
+        "transactions": [
+          {
+            "transaction_id": 242215746,
+            "transaction_type": "EMPLOYEES_LIABILITY",
+            "transaction_name": "Текущие расчеты с сотрудниками",
+            "transaction_amount": 4365.65,
+            "transaction_datetime": "2026-04-14 00:00:00",
+            "transaction_comment": "Программа: Официанты 5%. Смена: 80"
+          },
+          {
+            "transaction_id": 242215748,
+            "transaction_type": "EMPLOYEES_LIABILITY",
+            "transaction_name": "Текущие расчеты с сотрудниками",
+            "transaction_amount": 1886.5,
+            "transaction_datetime": "2026-04-14 00:00:00",
+            "transaction_comment": "Программа: Официанты 7%. Смена: 80"
+          }
+        ]
+      }
+    ]
+  },
+  "created_at": "2026-04-14T16:58:52.472671",
+  "expires_at": "2026-04-14T17:08:52.472682",
+  "ttl_seconds": 600
+}

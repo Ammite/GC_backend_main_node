@@ -15,6 +15,7 @@ class DOrder(Base):
     phone = Column(String(50), nullable=True)
     guest_count = Column(Integer, default=0)
     tab_name = Column(String(100), nullable=True)
+    room = Column(String(255), nullable=True)
     price_category_id = Column(String(50), nullable=True)
     order_type_id = Column(Integer, ForeignKey("order_types.id"), nullable=True)
     order_type = relationship("OrderType")

@@ -1,0 +1,178 @@
+{
+  "info": {
+    "description": "Тестовые примеры запросов для создания складских документов",
+    "note": "Перед использованием необходимо синхронизировать данные через эндпоинты:",
+    "sync_endpoints": [
+      "POST /sync/stores - синхронизация складов",
+      "POST /sync/conceptions - синхронизация концепций",
+      "POST /sync/suppliers - синхронизация поставщиков"
+    ],
+    "current_data": {
+      "organizations": [
+        {
+          "id": 1,
+          "name": "Фабрика"
+        }
+      ],
+      "items": [
+        {
+          "id": 3021,
+          "name": "услуги спецтехники"
+        },
+        {
+          "id": 3232,
+          "name": "услуги доставки"
+        },
+        {
+          "id": 3239,
+          "name": "Чекадержатель"
+        }
+      ],
+      "accounts": [
+        {
+          "id": 46,
+          "name": "Инвентарь"
+        }
+      ]
+    }
+  },
+  "examples": {
+    "incoming_invoice": {
+      "description": "Приходная накладная (INCOMING_INVOICE)",
+      "endpoint": "POST /warehouse/documents",
+      "note": "⚠️ Требуется синхронизация: склады, концепции, поставщики. После синхронизации концепция 'ГК 9 Премьера' будет использована автоматически.",
+      "request": {
+        "document_type": "INCOMING_INVOICE",
+        "document_number": null,
+        "date": "15.01.2025",
+        "date_incoming": "15.01.2025",
+        "organization_id": 1,
+        "store_id": 1,
+        "conception_id": null,
+        "supplier_id": 1,
+        "invoice": "TEST-INV-001",
+        "comment": "Тестовая приходная накладная",
+        "items": [
+          {
+            "item_id": 3021,
+            "quantity": 10.0,
+            "price": 100.0,
+            "amount": 1000.0
+          },
+          {
+            "item_id": 3232,
+            "quantity": 5.0,
+            "price": 200.0,
+            "amount": 1000.0
+          }
+        ]
+      },
+      "curl_example": "curl -X POST 'http://localhost:8000/warehouse/documents' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -d '{\n    \"document_type\": \"INCOMING_INVOICE\",\n    \"date\": \"15.01.2025\",\n    \"date_incoming\": \"15.01.2025\",\n    \"organization_id\": 1,\n    \"store_id\": 1,\n    \"supplier_id\": 1,\n    \"invoice\": \"TEST-INV-001\",\n    \"comment\": \"Тестовая приходная накладная\",\n    \"items\": [\n      {\n        \"item_id\": 3021,\n        \"quantity\": 10.0,\n        \"price\": 100.0,\n        \"amount\": 1000.0\n      }\n    ]\n  }'"
+    },
+    "outgoing_invoice": {
+      "description": "Расходная накладная (OUTGOING_INVOICE)",
+      "endpoint": "POST /warehouse/documents",
+      "note": "⚠️ Требуется синхронизация: склады. После синхронизации концепция 'ГК 9 Премьера' будет использована автоматически.",
+      "request": {
+        "document_type": "OUTGOING_INVOICE",
+        "document_number": null,
+        "date": "15.01.2025",
+        "date_incoming": "15.01.2025",
+        "organization_id": 1,
+        "default_store_id": 1,
+        "account_id": 46,
+        "comment": "Тестовая расходная накладная",
+        "items": [
+          {
+            "item_id": 3021,
+            "quantity": 5.0,
+            "price": 100.0,
+            "amount": 500.0
+          }
+        ]
+      },
+      "curl_example": "curl -X POST 'http://localhost:8000/warehouse/documents' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -d '{\n    \"document_type\": \"OUTGOING_INVOICE\",\n    \"date\": \"15.01.2025\",\n    \"date_incoming\": \"15.01.2025\",\n    \"organization_id\": 1,\n    \"default_store_id\": 1,\n    \"account_id\": 46,\n    \"comment\": \"Тестовая расходная накладная\",\n    \"items\": [\n      {\n        \"item_id\": 3021,\n        \"quantity\": 5.0,\n        \"price\": 100.0,\n        \"amount\": 500.0\n      }\n    ]\n  }'"
+    },
+    "writeoff": {
+      "description": "Акт списания (WRITEOFF)",
+      "endpoint": "POST /warehouse/writeoff-documents",
+      "note": "⚠️ Требуется синхронизация: склады.",
+      "request": {
+        "date_incoming": "2025-01-15",
+        "organization_id": 1,
+        "store_id": 1,
+        "account_id": 46,
+        "status": "NEW",
+        "comment": "Тестовый акт списания",
+        "items": [
+          {
+            "item_id": 3021,
+            "amount": 2.0,
+            "cost": 200.0
+          }
+        ]
+      },
+      "curl_example": "curl -X POST 'http://localhost:8000/warehouse/writeoff-documents' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_TOKEN' \\\n  -d '{\n    \"date_incoming\": \"2025-01-15\",\n    \"organization_id\": 1,\n    \"store_id\": 1,\n    \"account_id\": 46,\n    \"status\": \"NEW\",\n    \"comment\": \"Тестовый акт списания\",\n    \"items\": [\n      {\n        \"item_id\": 3021,\n        \"amount\": 2.0,\n        \"cost\": 200.0\n      }\n    ]\n  }'"
+    }
+  },
+  "minimal_examples": {
+    "incoming_invoice_minimal": {
+      "description": "Минимальный пример приходной накладной (только обязательные поля)",
+      "endpoint": "POST /warehouse/documents",
+      "request": {
+        "document_type": "INCOMING_INVOICE",
+        "date": "15.01.2025",
+        "organization_id": 1,
+        "store_id": 1,
+        "items": [
+          {
+            "item_id": 3021,
+            "quantity": 10.0,
+            "amount": 1000.0
+          }
+        ]
+      }
+    },
+    "outgoing_invoice_minimal": {
+      "description": "Минимальный пример расходной накладной (только обязательные поля)",
+      "endpoint": "POST /warehouse/documents",
+      "request": {
+        "document_type": "OUTGOING_INVOICE",
+        "date": "15.01.2025",
+        "organization_id": 1,
+        "default_store_id": 1,
+        "account_id": 46,
+        "items": [
+          {
+            "item_id": 3021,
+            "quantity": 5.0,
+            "amount": 500.0
+          }
+        ]
+      }
+    },
+    "writeoff_minimal": {
+      "description": "Минимальный пример акта списания (только обязательные поля)",
+      "endpoint": "POST /warehouse/writeoff-documents",
+      "request": {
+        "date_incoming": "2025-01-15",
+        "organization_id": 1,
+        "store_id": 1,
+        "account_id": 46,
+        "items": [
+          {
+            "item_id": 3021,
+            "amount": 2.0,
+            "cost": 200.0
+          }
+        ]
+      }
+    }
+  },
+  "notes": {
+    "conception": "Концепция 'ГК 9 Премьера' (код: 13) будет использована автоматически для всех документов, если она есть в БД. Поле conception_id можно не указывать.",
+    "items": "Можно использовать либо item_id (наш внутренний ID), либо item_iiko_id (iiko ID). Рекомендуется использовать item_id.",
+    "dates": "Формат даты: 'DD.MM.YYYY' для приходных/расходных накладных, 'YYYY-MM-DD' для актов списания."
+  }
+}
+

@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from utils.security import get_current_user
 from database.database import get_db
-from services.salary.salary_service import calculate_waiter_salary
-from schemas.salary import SalaryResponse
+from services.salary.salary_service import calculate_waiter_salary, get_waiter_daily_sales
+from schemas.salary import SalaryResponse, WaiterSalesResponse
 import logging
 
 
@@ -19,7 +19,7 @@ def get_waiter_salary(
     date: str = Query(..., description="Дата в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user=Depends(get_current_user),
 ):
     """
     Получить зарплату официанта за день
@@ -37,13 +37,13 @@ def get_waiter_salary(
             db=db,
             waiter_id=waiter_id,
             date=date,
-            organization_id=organization_id
+            organization_id=organization_id,
         )
         
         if not salary_info:
             raise HTTPException(
-                status_code=404, 
-                detail="Waiter not found or invalid date format"
+                status_code=404,
+                detail="Waiter not found or invalid date format",
             )
         
         return salary_info
@@ -52,4 +52,38 @@ def get_waiter_salary(
     except Exception as e:
         logger.error(f"Error calculating waiter salary: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/waiter/{waiter_id}/sales-today", response_model=WaiterSalesResponse)
+def get_waiter_sales_today(
+    waiter_id: int = Path(..., description="ID официанта (employee_id)"),
+    date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
+    organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Получить сумму продаж официанта за день и количество чеков.
+    """
+    try:
+        sales = get_waiter_daily_sales(
+            db=db,
+            waiter_id=waiter_id,
+            date=date,
+            organization_id=organization_id,
+        )
+        if not sales:
+            raise HTTPException(status_code=404, detail="Waiter not found or invalid date")
+
+        return WaiterSalesResponse(
+            date=sales["date"],
+            totalAmount=sales["totalAmount"],
+            ordersCount=sales["ordersCount"],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting waiter sales: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 

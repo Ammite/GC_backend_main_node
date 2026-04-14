@@ -7,7 +7,7 @@ class QuestResponse(BaseModel):
     """Схема ответа для квеста"""
     id: str
     title: str
-    description: str
+    description: Optional[str] = None
     reward: float  # Награда в тенге
     current: int  # Текущее значение
     target: int  # Целевое значение
@@ -47,7 +47,7 @@ class QuestDetailResponse(QuestResponse):
 class CreateQuestRequest(BaseModel):
     """Запрос на создание квеста"""
     title: str
-    description: str
+    description: Optional[str] = None
     reward: float
     target: int
     unit: str
@@ -61,4 +61,28 @@ class CreateQuestResponse(BaseModel):
     success: bool
     message: str
     quest: QuestResponse
+
+
+class UpdateQuestRequest(BaseModel):
+    """Запрос на обновление квеста"""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    reward: Optional[float] = None
+    target: Optional[int] = None
+    unit: Optional[str] = None
+    date: Optional[str] = None  # "DD.MM.YYYY"
+    employeeIds: Optional[List[str]] = None
+
+
+class UpdateQuestResponse(BaseModel):
+    """Ответ на обновление квеста"""
+    success: bool
+    message: str
+    quest: QuestResponse
+
+
+class DeleteQuestResponse(BaseModel):
+    """Ответ на удаление квеста"""
+    success: bool
+    message: str
 

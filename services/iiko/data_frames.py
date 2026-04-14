@@ -1,112 +1,111 @@
+# Оптимизированные OLAP data frames для iiko API
+#
+# Убраны:
+# - Иерархии-дубли (Product.TopParent/SecondParent/ThirdParent и т.д.) — вычисляются в парсере из *.Hierarchy
+# - Производные от даты (DateTime.Year/Quarter/Month/...) — вычисляются в парсере из DateTime.Typed
+# - Неиспользуемые поля: алкоголь, Department.Category1-5, Contr-Product детали, теги
+# - В sales: Delivery.* (кроме IsDelivery), Cooking.*, OrderTime.*, DishSize детали, PriceCategory, PublicExternalData
+
+# ─── Общий список полей для TRANSACTIONS (используется в обоих фреймах) ───
+
+_transactions_group_by_row_fields = [
+    # Идентификаторы
+    "Session.GroupId",
+    "OrderId",
+    "Product.Category.Id",
+    "Counteragent.Id",
+    "Account.Id",
+    "Product.Id",
+    "Product.Num",
+    "Product.AccountingCategory",
+
+    # Сессии и группы
+    "Session.Group",
+    "Contr-Account.Group",
+    "Account.Group",
+
+    # Даты (основные — остальные вычисляются в парсере)
+    "DateTime.Typed",
+    "DateSecondary.DateTimeTyped",
+    "DateSecondary.DateTyped",
+    "DateTime.DateTyped",
+
+    # Транзакция
+    "TransactionSide",
+    "TransactionType",
+    "TransactionType.Code",
+
+    # Номенклатура
+    "Product.MeasureUnit",
+    "Product.Hierarchy",       # → парсер вычисляет TopParent/SecondParent/ThirdParent
+    "Product.Category",
+    "Product.CookingPlaceType",
+    "Product.Type",
+    "Product.Name",
+
+    # Счета
+    "Account.AccountHierarchyFull",  # → парсер вычисляет Top/Second/Third
+    "Account.Name",
+    "Account.Code",
+    "Account.Type",
+    "Account.StoreOrAccount",
+    "Account.CounteragentType",
+    "Account.IsCashFlowAccount",
+
+    # Корреспондентские счета
+    "Contr-Account.Name",
+    "Contr-Account.Code",
+    "Contr-Account.Type",
+
+    # Корреспондент-продукт (только иерархия)
+    "Contr-Product.Hierarchy",  # → парсер вычисляет TopParent/SecondParent/ThirdParent
+
+    # Движение денежных средств
+    "CashFlowCategory",
+    "CashFlowCategory.Type",
+    "CashFlowCategory.Hierarchy",  # → парсер вычисляет HierarchyLevel1/2/3
+
+    # Контрагенты
+    "Counteragent.Name",
+
+    # Организация
+    "Department",
+    "Department.Code",
+    "Department.JurPerson",
+
+    # Сессии и кассы
+    "Session.CashRegister",
+    "Session.RestaurantSection",
+
+    # Концепции
+    "Conception",
+    "Conception.Code",
+
+    # Склады
+    "Store",
+
+    # Документы
+    "Document",
+    "OrderNum",
+
+    # Комментарии
+    "Comment",
+]
+
+_transactions_aggregate_fields = [
+    "Amount.Out",
+    "Amount.In",
+    "Sum.Outgoing",
+    "Sum.Incoming",
+    "Sum.ResignedSum",
+]
+
+
 iiko_transactions_data_frame = {
     "reportType": "TRANSACTIONS",
-    "groupByRowFields": [
-        "Session.GroupId",
-        "OrderId",
-        "Product.Category.Id",
-        "Counteragent.Id",
-        "Product.Tags.IdsCombo",
-        "Product.Tag.Id",
-        "Account.Id",
-        "Product.Id",
-        "Product.Num",
-        "Product.AccountingCategory",
-        "DateTime.Year",
-        "Session.Group",
-        "Contr-Product.AlcoholClass.Group",
-        "Product.AlcoholClass.Group",
-        "Contr-Account.Group",
-        "Product.TopParent",
-        "Product.SecondParent",
-        "Product.ThirdParent",
-        "Account.Group",
-        "DateTime.Typed",
-        "DateSecondary.DateTimeTyped",
-        "DateSecondary.DateTyped",
-        "TransactionSide",
-        "DateTime.DayOfWeak",
-        "Product.MeasureUnit",
-        "Product.Hierarchy",
-        "CashFlowCategory.Hierarchy",
-        "Account.AccountHierarchyFull",
-        "Session.CashRegister",
-        "Department.Category1",
-        "Department.Category2",
-        "Department.Category3",
-        "Department.Category4",
-        "Department.Category5",
-        "Product.Category",
-        "DateTime.Quarter",
-        "Contr-Product.AlcoholClass",
-        "Product.AlcoholClass",
-        "Contr-Product.AlcoholClass.Code",
-        "Product.AlcoholClass.Code",
-        "Conception.Code",
-        "Contr-Account.Code",
-        "Department.Code",
-        "Account.Code",
-        "TransactionType.Code",
-        "Comment",
-        "Counteragent.Name",
-        "Conception",
-        "Contr-Product.Category.Id",
-        "Contr-Product.Tags.IdsCombo",
-        "Contr-Product.Id",
-        "Contr-Product.Num",
-        "Contr-Product.AccountingCategory",
-        "Contr-Product.TopParent",
-        "Contr-Product.SecondParent",
-        "Contr-Product.ThirdParent",
-        "Contr-Product.MeasureUnit",
-        "Contr-Product.Hierarchy",
-        "Contr-Product.Category",
-        "Contr-Product.Tags.NamesCombo",
-        "Contr-Account.Name",
-        "Contr-Product.CookingPlaceType",
-        "Contr-Product.Type",
-        "Contr-Product.Name",
-        "DateTime.Month",
-        "DateTime.WeekInYear",
-        "DateTime.WeekInMonth",
-        "Document",
-        "OrderNum",
-        "Session.RestaurantSection",
-        "Product.Tags.NamesCombo",
-        "Product.Tag.Name",
-        "Store",
-        "Account.StoreOrAccount",
-        "CashFlowCategory",
-        "CashFlowCategory.HierarchyLevel1",
-        "CashFlowCategory.HierarchyLevel2",
-        "CashFlowCategory.HierarchyLevel3",
-        "Account.Name",
-        "Account.AccountHierarchyTop",
-        "Account.AccountHierarchySecond",
-        "Account.AccountHierarchyThird",
-        "Contr-Product.AlcoholClass.Type",
-        "Product.AlcoholClass.Type",
-        "Account.CounteragentType",
-        "Contr-Account.Type",
-        "Product.CookingPlaceType",
-        "CashFlowCategory.Type",
-        "Account.Type",
-        "TransactionType",
-        "Product.Type",
-        "Department",
-        "Account.IsCashFlowAccount",
-        "DateTime.DateTyped",
-        "DateTime.Hour",
-        "Product.Name",
-        "Department.JurPerson"
-    ],
+    "groupByRowFields": _transactions_group_by_row_fields,
     "groupByColFields": [],
-    "aggregateFields": [
-        "Amount.Out",
-        "Amount.In",
-        "Sum.Outgoing",
-        "Sum.Incoming",
-        "Sum.ResignedSum"
-    ],
+    "aggregateFields": _transactions_aggregate_fields,
     "filters": {
         "DateTime.DateTyped": {
             "filterType": "DateRange",
@@ -114,40 +113,33 @@ iiko_transactions_data_frame = {
             "from": "2025-09-29",
             "to": "2025-09-30",
             "includeLow": True,
-            "includeHigh": False
+            "includeHigh": False,
         }
-    }
+    },
 }
 
 iiko_sales_data_frame = {
     "reportType": "SALES",
     "groupByRowFields": [
-        "CloseTime.Minutes15",
-        "OpenTime.Minutes15",
+        # Идентификаторы (критично для уникальности строк)
+        "ItemSaleEvent.Id",
         "AuthUser.Id",
         "DishId",
         "WaiterTeam.Id",
         "DishCategory.Accounting.Id",
         "RestorauntGroup.Id",
         "DishGroup.Id",
-        "Delivery.Id",
         "UniqOrderId.Id",
         "Cashier.Id",
         "SessionID",
         "DishCategory.Id",
-        "Delivery.Courier.Id",
         "CookingPlace.Id",
-        "DishTaxCategory.Id",
-        "Delivery.DeliveryOperator.Id",
         "SoldWithDish.Id",
         "RestaurantSection.Id",
         "WaiterName.ID",
         "OrderWaiter.Id",
         "Department.Id",
-        "ItemSaleEvent.Id",
         "SoldWithItem.Id",
-        "DishTags.IdsCombo",
-        "DishTag.Id",
         "PaymentTransaction.Id",
         "PaymentTransaction.Ids",
         "DishSize.Id",
@@ -156,239 +148,185 @@ iiko_sales_data_frame = {
         "PayTypes.GUID",
         "OrderIncrease.Type.IDs",
         "OrderDiscount.Type.IDs",
-        "DishSize.Scale.Id",
-        "Delivery.Email",
+
+        # Текстовые/именные поля
         "AuthUser",
-        "Delivery.Address",
         "Banquet",
         "NonCashPaymentType",
         "DishName",
         "DeletedWithWriteoff",
         "WaiterTeam.Name",
         "DishCategory.Accounting",
-        "CreditUser",
         "Currencies.Currency",
-        "CardOwner",
         "ExternalNumber",
         "Storned",
-        "OrderTime.PrechequeLength",
-        "Delivery.WayDuration",
+
+        # Время (основные — остальные вычисляются в парсере из OpenTime/CloseTime)
         "CloseTime",
-        "Delivery.CloseTime",
-        "OrderTime.OrderLength",
-        "Delivery.CookingFinishTime",
         "OpenTime",
-        "Delivery.SendTime",
-        "Delivery.PrintTime",
-        "Delivery.BillTime",
         "PrechequeTime",
-        "YearOpen",
-        "Delivery.City",
+        "OpenDate.Typed",
+
+        # Заказ
         "OrderDiscount.GuestCard",
-        "RestorauntGroup",
-        "DishGroup",
-        "DishGroup.TopParent",
-        "DishGroup.SecondParent",
-        "DishGroup.ThirdParent",
-        "PayTypes.Group",
-        "Delivery.CustomerCreatedDateTyped",
-        "DayOfWeekOpen",
-        "Delivery.IsDelivery",
-        "DishMeasureUnit",
         "OrderDeleted",
-        "Delivery.Zone",
-        "Delivery.ExternalCartographyId",
-        "DishGroup.Hierarchy",
-        "Delivery.Index",
-        "Delivery.SourceKey",
-        "OriginName",
-        "Card",
-        "CashRegisterName",
-        "Cashier",
-        "Department.Category1",
-        "Department.Category2",
-        "Department.Category3",
-        "Department.Category4",
-        "Department.Category5",
-        "DishCategory",
-        "QuarterOpen",
-        "DishCode",
-        "DishCode.Quick",
-        "DishGroup.Num",
-        "Conception.Code",
-        "Department.Code",
-        "DishSize.ShortName",
-        "DishAmountInt",
-        "GuestNum",
         "OrderComment",
         "Comment",
-        "Delivery.DeliveryComment",
-        "Delivery.CustomerComment",
-        "Delivery.CancelComment",
         "DeletionComment",
-        "CreditUser.Company",
-        "Counteragent.Name",
-        "Conception",
-        "CardType",
-        "Currencies.CurrencyRate",
-        "Delivery.Courier",
-        "Delivery.EcsService",
-        "CookingPlace",
-        "Mounth",
-        "VAT.Percent",
-        "StoreTo",
-        "DishForeignName",
-        "ItemSaleEventDiscountType",
-        "DishTaxCategory.Name",
-        "WeekInYearOpen",
-        "WeekInMonthOpen",
-        "Bonus.CardNumber",
-        "Delivery.Number",
-        "Delivery.CustomerCardNumber",
-        "CardNumber",
+        "OrderNum",
+        "OperationType",
+        "OrderServiceType",
+
+        # Ресторан
+        "RestorauntGroup",
+        "Department",
+        "Department.Code",
+        "RestaurantSection",
+        "CashRegisterName",
         "CashRegisterName.Number",
-        "Cooking.ServeNumber",
+        "CashRegisterName.CashRegisterSerialNumber",
         "SessionNum",
         "TableNum",
-        "FiscalChequeNumber",
-        "OrderNum",
-        "Delivery.DeliveryOperator",
-        "OperationType",
-        "Delivery.Delay",
-        "RestaurantSection",
-        "Delivery.CustomerOpinionComment",
-        "Delivery.DiffBetweenActualDeliveryTimeAndPredictedDeliveryTime",
-        "WaiterName",
-        "OrderWaiter.Name",
-        "Delivery.AvgMark",
-        "Delivery.AvgCourierMark",
-        "Delivery.AvgFoodMark",
-        "Delivery.AvgOperatorMark",
-        "Delivery.ExpectedTime",
-        "DishFullName",
-        "DishTags.NamesCombo",
-        "DishTag.Name",
-        "DishSize.Priority",
-        "Delivery.CancelCause",
-        "WriteoffReason",
-        "RemovalType",
-        "Delivery.PredictedDeliveryTime",
-        "Delivery.PredictedCookingCompleteTime",
-        "SoldWithDish",
-        "IncreasePercent",
-        "DiscountPercent",
-        "PublicExternalData",
-        "PublicExternalData.Xml",
-        "DishSize.Name",
-        "Delivery.Region",
         "CashLocation",
-        "OrderServiceType",
-        "Delivery.MarketingSource",
-        "Delivery.CustomerMarketingSource",
-        "DishServicePrintTime",
-        "CashRegisterName.CashRegisterSerialNumber",
-        "Store.Name",
-        "WriteoffUser",
-        "DishReturnSum",
-        "IncreaseSum",
-        "Cashier.Code",
-        "Delivery.Phone",
-        "Delivery.CustomerPhone",
-        "Bonus.Type",
-        "NonCashPaymentType.DocumentType",
-        "Delivery.ServiceType",
-        "OrderType",
-        "CardTypeName",
-        "Delivery.CustomerCardType",
+        "JurName",
+        "Conception",
+        "Conception.Code",
+
+        # Блюдо/товар
+        "DishGroup",
+        "DishGroup.Hierarchy",  # → парсер вычисляет TopParent/SecondParent/ThirdParent
+        "DishGroup.Num",
+        "DishMeasureUnit",
+        "DishCode",
+        "DishCode.Quick",
+        "DishForeignName",
+        "DishFullName",
+        "DishType",
+        "DishAmountInt",
+        "DishCategory",
+        "CookingPlace",
         "CookingPlaceType",
-        "OrderIncrease.Type",
+
+        # Доставка (только флаг)
+        "Delivery.IsDelivery",
+
+        # Платежи
+        "PayTypes.Group",
         "PayTypes",
         "PayTypes.Combo",
-        "OrderDiscount.Type",
-        "DishType",
-        "Department",
-        "Delivery.Street",
-        "OpenDate.Typed",
-        "Delivery.CustomerName",
-        "Delivery.ActualTime",
         "PayTypes.IsPrintCheque",
-        "PriceCategoryDiscountCardOwner",
-        "PriceCategoryUserCardOwner",
-        "PriceCategoryCard",
-        "PriceCategory",
-        "HourClose",
-        "HourOpen",
-        "DishSize.Scale.Name",
-        "JurName"
+
+        # Карты
+        "Card",
+        "CardOwner",
+        "CardType",
+        "CardTypeName",
+        "CardNumber",
+        "Bonus.CardNumber",
+        "Bonus.Type",
+
+        # Фискальный чек
+        "FiscalChequeNumber",
+
+        # Валюты
+        "Currencies.CurrencyRate",
+
+        # Налоги
+        "VAT.Percent",
+
+        # Другое
+        "OriginName",
+        "Counteragent.Name",
+        "ItemSaleEventDiscountType",
+        "NonCashPaymentType.DocumentType",
+        "OrderType",
+        "OrderIncrease.Type",
+        "OrderDiscount.Type",
+        "GuestNum",
+
+        # Финансовое
+        "DishReturnSum",
+        "IncreaseSum",
+        "IncreasePercent",
+        "DiscountPercent",
+
+        # Официант/кассир
+        "WaiterName",
+        "OrderWaiter.Name",
+        "Cashier",
+        "Cashier.Code",
+
+        # Склад
+        "Store.Name",
+        "StoreTo",
+
+        # Списание
+        "WriteoffReason",
+        "WriteoffUser",
+        "RemovalType",
+
+        # Продано с блюдом
+        "SoldWithDish",
+
+        # Печать
+        "DishServicePrintTime",
     ],
     "groupByColFields": [],
     "aggregateFields": [
-        "PercentOfSummary.ByCol",
-        "PercentOfSummary.ByRow",
-        "OrderTime.OrderLengthSum",
-        "DishServicePrintTime.OpenToLastPrintDuration",
-        "Delivery.CookingToSendDuration",
-        "Cooking.StartDelayTime.Avg",
+        # Количества
         "UniqOrderId.OrdersCount",
-        "ItemSaleEventDiscountType.DiscountAmount",
         "DishAmountInt",
-        "PayTypes.VoucherNum",
         "GuestNum",
-        "ItemSaleEventDiscountType.ComboAmount",
-        "IncentiveSumBase.Sum",
-        "VAT.Sum",
-        "VAT.Percent",
-        "ProductCostBase.Profit",
-        "ProductCostBase.MarkUp",
-        "OrderNum",
-        "Cooking.FeedLateTime.Avg",
-        "Cooking.CookingLateTime.Avg",
         "OrderItems",
-        "Cooking.GuestWaitTime.Avg",
-        "Cooking.ServeTime.Avg",
-        "Cooking.CookingDuration.Avg",
-        "Cooking.Cooking1Duration.Avg",
-        "Cooking.Cooking2Duration.Avg",
-        "Cooking.Cooking3Duration.Avg",
-        "Cooking.Cooking4Duration.Avg",
-        "Cooking.KitchenTime.Avg",
+        "OrderNum",
+        "PayTypes.VoucherNum",
+        "GuestNum.Avg",
+
+        # Скидки и наценки
+        "ItemSaleEventDiscountType.DiscountAmount",
+        "ItemSaleEventDiscountType.ComboAmount",
         "IncreasePercent",
         "DiscountPercent",
+
+        # НДС
+        "VAT.Sum",
+        "VAT.Percent",
+
+        # Стоимость продукта
+        "ProductCostBase.Profit",
+        "ProductCostBase.MarkUp",
         "ProductCostBase.ProductCost",
         "ProductCostBase.PercentWithoutVAT",
         "ProductCostBase.OneItem",
         "ProductCostBase.Percent",
-        "DishServicePrintTime.Max",
-        "DishAmountInt.PerOrder",
-        "OrderTime.AveragePrechequeTime",
-        "Delivery.WayDurationAvg",
-        "OrderTime.AverageOrderTime",
-        "GuestNum.Avg",
-        "Delivery.DelayAvg",
-        "DishDiscountSumInt.averageByGuest",
-        "Delivery.AggregatedAvgMark",
-        "Delivery.AggregatedAvgCourierMark",
-        "Delivery.AggregatedAvgFoodMark",
-        "Delivery.AggregatedAvgOperatorMark",
+
+        # Стимулирующая сумма
+        "IncentiveSumBase.Sum",
+
+        # Суммы
+        "fullSum",
+        "DishSumInt",
+        "DishSumInt.averagePriceWithVAT",
+        "DishDiscountSumInt",
+        "DishDiscountSumInt.withoutVAT",
         "DishDiscountSumInt.average",
         "DishDiscountSumInt.averageWithoutVAT",
         "DishDiscountSumInt.averagePriceWithVAT",
         "DishDiscountSumInt.averagePrice",
-        "DishSumInt.averagePriceWithVAT",
-        "Delivery.WayDurationSum",
-        "fullSum",
-        "DishSumInt",
-        "Bonus.Sum",
-        "Currencies.SumInCurrency",
+        "DishDiscountSumInt.averageByGuest",
         "DishReturnSum",
         "DishReturnSum.withoutVAT",
         "IncreaseSum",
         "DiscountSum",
         "discountWithoutVAT",
-        "DishDiscountSumInt",
-        "DishDiscountSumInt.withoutVAT",
         "sumAfterDiscountWithoutVAT",
-        "UniqOrderId"
+        "Bonus.Sum",
+        "Currencies.SumInCurrency",
+        "UniqOrderId",
+
+        # Печать
+        "DishServicePrintTime.Max",
+        "DishServicePrintTime.OpenToLastPrintDuration",
     ],
     "filters": {
         "OpenDate.Typed": {
@@ -397,7 +335,32 @@ iiko_sales_data_frame = {
             "from": "2025-09-29",
             "to": "2025-09-30",
             "includeLow": True,
-            "includeHigh": False
+            "includeHigh": False,
         }
-    }
+    },
+}
+
+iiko_transactions_by_modification_data_frame = {
+    "reportType": "TRANSACTIONS",
+    "groupByRowFields": _transactions_group_by_row_fields,
+    "groupByColFields": [],
+    "aggregateFields": _transactions_aggregate_fields,
+    "filters": {
+        "DateSecondary.DateTyped": {
+            "filterType": "DateRange",
+            "periodType": "CUSTOM",
+            "from": "2025-09-29",
+            "to": "2025-09-30",
+            "includeLow": True,
+            "includeHigh": False,
+        },
+        "DateTime.DateTyped": {
+            "filterType": "DateRange",
+            "periodType": "CUSTOM",
+            "from": "2025-09-29",
+            "to": "2025-09-30",
+            "includeLow": True,
+            "includeHigh": False,
+        },
+    },
 }

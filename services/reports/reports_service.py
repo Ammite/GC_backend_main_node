@@ -2,8 +2,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import Optional
 import asyncio
+import logging
 from utils.cache import cached
 from utils.async_db_executor import gather_db_queries, run_in_thread
+from utils.performance_logger import log_async_execution_time, log_execution
 from schemas.reports import (
     OrderReportsResponse,
     MoneyFlowResponse,
@@ -29,6 +31,7 @@ from services.transactions_and_statistics.statistics_service import (
     calculate_change_percent,
     parse_date,
     get_period_dates,
+    resolve_date_range,
     get_orders_for_period,
     calculate_revenue_from_orders,
     calculate_average_check,
@@ -45,31 +48,38 @@ from services.transactions_and_statistics.statistics_service import (
     get_bank_commission_total,
     get_factory_revenue
 )
-from models.transaction import Transaction
+from services.transactions_and_statistics.daily_aggregates_service import (
+    get_daily_metric_sum
+)
+
+logger = logging.getLogger(__name__)
 
 
 # @cached(ttl_seconds=300, key_prefix="reports_orders")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
 async def get_order_reports(
     db: Session,
-    date: str,
+    date: Optional[str] = None,
     period: Optional[str] = "day",
     organization_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> OrderReportsResponse:
     """
     Получить отчеты по заказам
-    
+
     Args:
         db: сессия БД
         date: дата в формате "DD.MM.YYYY"
         period: период ("day" | "week" | "month")
         organization_id: ID организации (фильтр)
-    
+        date_from: начало периода DD.MM.YYYY (приоритет над date+period)
+        date_to: конец периода DD.MM.YYYY (приоритет над date+period)
+
     Returns:
         Отчеты по заказам
     """
     # Парсим дату и определяем период
-    target_date = parse_date(date)
-    start_date, end_date, previous_start, previous_end = get_period_dates(target_date, period)
+    start_date, end_date, previous_start, previous_end = resolve_date_range(date_from, date_to, date, period)
     
     # Параллельно получаем все данные
     orders, previous_orders, returns_sum, avg_items_per_order, popular_dishes_list, unpopular_dishes_list = await gather_db_queries(
@@ -140,70 +150,76 @@ async def get_order_reports(
 
 
 # @cached(ttl_seconds=300, key_prefix="reports_moneyflow")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
+@log_async_execution_time
 async def get_moneyflow_reports(
     db: Session,
-    date: str,
+    date: Optional[str] = None,
     period: Optional[str] = "day",
     organization_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> MoneyFlowResponse:
     """
     Получить денежные отчеты
-    
+
     Args:
         db: сессия БД
         date: дата в формате "DD.MM.YYYY"
         period: период ("day" | "week" | "month")
         organization_id: ID организации (фильтр)
-    
+        date_from: начало периода DD.MM.YYYY (приоритет над date+period)
+        date_to: конец периода DD.MM.YYYY (приоритет над date+period)
+
     Returns:
         Денежные потоки
     """
+    logger.debug("[PERF] get_moneyflow_reports -> parsing dates")
     # Парсим дату и определяем период
-    target_date = parse_date(date)
-    start_date, end_date, _, _ = get_period_dates(target_date, period)
-    
+    start_date, end_date, _, _ = resolve_date_range(date_from, date_to, date, period)
+    # Для обратной совместимости: date используется ниже как строка в ExpenseItem
+    if not date:
+        date = start_date.strftime("%d.%m.%Y")
+
     # Подготовка запросов для параллельного выполнения
     start_date_only = start_date.date()
     end_date_only = end_date.date()
     
-    # Функции для параллельного выполнения
-    def get_sum_incoming():
-        query = db.query(func.sum(Transaction.sum_incoming)).filter(
-            and_(
-                Transaction.contr_account_name == 'Торговая выручка',
-                Transaction.date_typed >= start_date_only,
-                Transaction.date_typed <= end_date_only
-            )
+    # Используем агрегированные данные из DailyAnalytics
+    def get_additional_revenue():
+        logger.debug("[PERF] get_moneyflow_reports -> get_additional_revenue")
+        return get_daily_metric_sum(
+            db,
+            metric_key="revenue_additional",
+            start_date=start_date_only,
+            end_date=end_date_only,
+            organization_id=organization_id
         )
-        if organization_id:
-            query = query.filter(Transaction.organization_id == organization_id)
-        return float(query.scalar() or 0)
     
-    def get_sum_outgoing():
-        query = db.query(func.sum(Transaction.sum_outgoing)).filter(
-            and_(
-                Transaction.contr_account_name == 'Торговая выручка',
-                Transaction.date_typed >= start_date_only,
-                Transaction.date_typed <= end_date_only
-            )
+    def get_factory_revenue_from_aggregates():
+        logger.debug("[PERF] get_moneyflow_reports -> get_factory_revenue_from_aggregates")
+        return get_daily_metric_sum(
+            db,
+            metric_key="factory_revenue",
+            start_date=start_date_only,
+            end_date=end_date_only,
+            organization_id=organization_id
         )
-        if organization_id:
-            query = query.filter(Transaction.organization_id == organization_id)
-        return float(query.scalar() or 0)
     
+    logger.debug("[PERF] get_moneyflow_reports -> starting gather_db_queries")
     # Параллельно получаем все данные
-    dishes_data, writeoffs_sum, writeoffs_details, expenses_result, bank_commission, revenue_by_category_payment, sum_incoming, sum_outgoing, factory_revenue = await gather_db_queries(
-        lambda: get_dishes_with_cost(db, start_date, end_date, organization_id),
-        lambda: get_writeoffs_sum_from_sales(db, start_date, end_date, organization_id),
-        lambda: get_writeoffs_details_from_sales(db, start_date, end_date, organization_id),
-        lambda: get_expenses_from_transactions(db, start_date, end_date, organization_id),
-        lambda: get_bank_commission_total(db, start_date, end_date, organization_id),
-        lambda: get_revenue_by_menu_category_and_payment(db, start_date, end_date, organization_id),
-        get_sum_incoming,
-        get_sum_outgoing,
-        lambda: get_factory_revenue(db, start_date, end_date, organization_id)
-    )
+    with log_execution("gather_db_queries for moneyflow"):
+        dishes_data, writeoffs_sum, writeoffs_details, expenses_result, bank_commission, revenue_by_category_payment, additional_revenue, factory_revenue = await gather_db_queries(
+            lambda: get_dishes_with_cost(db, start_date, end_date, organization_id),
+            lambda: get_writeoffs_sum_from_sales(db, start_date, end_date, organization_id),
+            lambda: get_writeoffs_details_from_sales(db, start_date, end_date, organization_id),
+            lambda: get_expenses_from_transactions(db, start_date, end_date, organization_id),
+            lambda: get_bank_commission_total(db, start_date, end_date, organization_id),
+            lambda: get_revenue_by_menu_category_and_payment(db, start_date, end_date, organization_id),
+            get_additional_revenue,
+            get_factory_revenue_from_aggregates
+        )
     
+    logger.debug("[PERF] get_moneyflow_reports -> processing results")
     total_cost = sum(float(cost) for _, _, cost in dishes_data)
     
     dish_costs = [
@@ -278,10 +294,8 @@ async def get_moneyflow_reports(
         
         incomes_sum += amount
     
-    # Дополнительная выручка
-    additional_revenue = round(sum_incoming - sum_outgoing, 2)
-    
-    incomes_sum += additional_revenue + factory_revenue
+    # Дополнительная выручка (фабрика не включается в доходы — показывается отдельно)
+    incomes_sum += additional_revenue
     
     # Формируем массив доходов по категориям
     income_by_category = []
@@ -359,113 +373,97 @@ async def get_moneyflow_reports(
 
 
 # @cached(ttl_seconds=300, key_prefix="reports_sales_dynamics")  # Кэш на 5 минут - ВРЕМЕННО ОТКЛЮЧЕН
+@log_async_execution_time
 async def get_sales_dynamics(
     db: Session,
-    date: str,
+    date: Optional[str] = None,
     days: int = 7,
     organization_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> SalesDynamicsResponse:
     """
     Получить динамику продаж за последние N дней
-    
+
     Args:
         db: сессия БД
         days: количество дней для анализа (по умолчанию 7)
         organization_id: ID организации (фильтр)
-    
+        date_from: начало периода DD.MM.YYYY (приоритет над date+days)
+        date_to: конец периода DD.MM.YYYY (приоритет над date+days)
+
     Returns:
         Динамика продаж с разбивкой по дням
     """
     from datetime import datetime, timedelta
-    from models.sales import Sales
+
+    logger.debug("[PERF] get_sales_dynamics -> determining period")
+    if date_from and date_to:
+        start_date = datetime.strptime(date_from, "%d.%m.%Y").date()
+        end_date = datetime.strptime(date_to, "%d.%m.%Y").date()
+    else:
+        # Определяем период: сегодня минус N дней
+        end_date = datetime.now().date()
+        if date:
+            end_date = parse_date(date).date()
+        start_date = end_date - timedelta(days=days - 1)  # -1 чтобы включить сегодня
     
-    # Определяем период: сегодня минус N дней
-    end_date = datetime.now().date()
-    if date:
-        end_date = parse_date(date).date()
-    start_date = end_date - timedelta(days=days - 1)  # -1 чтобы включить сегодня
-    
-    # Функции для получения данных по каждому дню (для параллельного выполнения)
+    # Функции для получения данных по каждому дню из агрегированных данных (для параллельного выполнения)
     def get_day_data(current_date):
-        query = db.query(
-            func.sum(Sales.dish_discount_sum_int).label("revenue"),
-            func.count(func.distinct(Sales.order_id)).label("checks_count")
-        ).filter(
-            and_(
-                Sales.open_date_typed == current_date,
-                Sales.cashier != 'Удаление позиций',
-                Sales.order_deleted != 'DELETED',
-                Sales.dish_discount_sum_int.isnot(None),
-                Sales.dish_discount_sum_int > 0
+        logger.debug(f"[PERF] get_sales_dynamics -> get_day_data for {current_date}")
+        # Используем агрегированные данные из DailyAnalytics
+        with log_execution(f"get_day_data({current_date})"):
+            day_revenue = get_daily_metric_sum(
+                db,
+                metric_key="revenue_total",
+                start_date=current_date,
+                end_date=current_date,
+                organization_id=organization_id
             )
-        )
+            
+            day_checks = int(get_daily_metric_sum(
+                db,
+                metric_key="orders_count",
+                start_date=current_date,
+                end_date=current_date,
+                organization_id=organization_id
+            ))
+            
+            day_average_check = get_daily_metric_sum(
+                db,
+                metric_key="average_check",
+                start_date=current_date,
+                end_date=current_date,
+                organization_id=organization_id
+            )
+            
+            # Если средний чек не рассчитан, вычисляем его
+            if day_average_check == 0 and day_checks > 0:
+                day_average_check = day_revenue / day_checks
         
-        if organization_id:
-            query = query.filter(Sales.organization_id == organization_id)
-        
-        result = query.first()
-        day_revenue = float(result.revenue or 0)
-        day_checks = int(result.checks_count or 0)
-        day_average_check = day_revenue / day_checks if day_checks > 0 else 0
-        
-        return DailySalesData(
-            date=current_date.strftime("%d.%m.%Y"),
-            revenue=day_revenue,
-            checks_count=day_checks,
-            average_check=day_average_check
-        )
+            return DailySalesData(
+                date=current_date.strftime("%d.%m.%Y"),
+                revenue=day_revenue,
+                checks_count=day_checks,
+                average_check=day_average_check
+            )
     
+    logger.debug("[PERF] get_sales_dynamics -> starting parallel day data collection")
     # Параллельно получаем данные по всем дням
     def create_day_task(i):
         current_date = start_date + timedelta(days=i)
         return run_in_thread(lambda: get_day_data(current_date))
     
-    day_tasks = [create_day_task(i) for i in range(days)]
-    daily_data = await asyncio.gather(*day_tasks)
+    with log_execution(f"gather day data for {days} days"):
+        day_tasks = [create_day_task(i) for i in range(days)]
+        daily_data = await asyncio.gather(*day_tasks)
     
+    logger.debug("[PERF] get_sales_dynamics -> calculating totals")
+    # Общая выручка (revenue_total не включает фабрику — фабрика показывается отдельно)
     total_revenue = sum(day.revenue for day in daily_data)
     total_checks = sum(day.checks_count for day in daily_data)
     
-    # Функции для получения дополнительной выручки
-    def get_sum_incoming():
-        query = db.query(func.sum(Transaction.sum_incoming)).filter(
-            and_(
-                Transaction.contr_account_name == 'Торговая выручка',
-                Transaction.date_typed >= start_date,
-                Transaction.date_typed <= end_date
-            )
-        )
-        if organization_id:
-            query = query.filter(Transaction.organization_id == organization_id)
-        return float(query.scalar() or 0)
-    
-    def get_sum_outgoing():
-        query = db.query(func.sum(Transaction.sum_outgoing)).filter(
-            and_(
-                Transaction.contr_account_name == 'Торговая выручка',
-                Transaction.date_typed >= start_date,
-                Transaction.date_typed <= end_date
-            )
-        )
-        if organization_id:
-            query = query.filter(Transaction.organization_id == organization_id)
-        return float(query.scalar() or 0)
-    
-    # Параллельно получаем дополнительную выручку и выручку с фабрики
-    start_datetime = datetime.combine(start_date, datetime.min.time())
-    end_datetime = datetime.combine(end_date, datetime.max.time())
-    
-    sum_incoming, sum_outgoing, factory_revenue = await gather_db_queries(
-        get_sum_incoming,
-        get_sum_outgoing,
-        lambda: get_factory_revenue(db, start_datetime, end_datetime, organization_id)
-    )
-    
-    # Итогово = sum_incoming - sum_outgoing
-    additional_revenue = round(sum_incoming - sum_outgoing, 2)
-    
-    total_revenue += additional_revenue + factory_revenue
-    
+    # Средний чек вычисляем из общей выручки и количества чеков
     overall_average_check = total_revenue / total_checks if total_checks > 0 else 0
     
     return SalesDynamicsResponse(

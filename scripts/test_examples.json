@@ -1,0 +1,39 @@
+{
+  "incoming_invoice": {
+    "note": "⚠️ Требуется синхронизация: склады, концепции, поставщики",
+    "document_type": "INCOMING_INVOICE",
+    "organization_id": 1,
+    "items": [
+      {
+        "item_id": 3021,
+        "quantity": 10.0,
+        "price": 100.0,
+        "amount": 1000.0
+      }
+    ]
+  },
+  "outgoing_invoice": {
+    "note": "⚠️ Требуется синхронизация: склады, счета",
+    "document_type": "OUTGOING_INVOICE",
+    "organization_id": 1,
+    "items": [
+      {
+        "item_id": 3021,
+        "quantity": 5.0,
+        "price": 100.0,
+        "amount": 500.0
+      }
+    ]
+  },
+  "writeoff": {
+    "note": "⚠️ Требуется синхронизация: склады, счета",
+    "organization_id": 1,
+    "items": [
+      {
+        "item_id": 3021,
+        "amount": 2.0,
+        "cost": 200.0
+      }
+    ]
+  }
+}

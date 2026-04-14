@@ -1,0 +1,38 @@
+# Пример настройки cron для автоматической синхронизации данных из iiko API
+# Запуск каждые 3 часа через HTTP эндпоинт
+
+# ВАЖНО: Перед добавлением в crontab убедитесь, что:
+# 1. API_VALID_TOKEN настроен в .env файле (или config.py)
+# 2. Сервер запущен и доступен по указанному URL
+# 3. URL и порт соответствуют вашей конфигурации
+
+# Получите ваш API ключ из переменной окружения API_VALID_TOKEN
+# Пример: export API_KEY="your-secret-api-key-here"
+
+# Добавьте эту строку в crontab (crontab -e):
+# Каждые 3 часа вызываем эндпоинт синхронизации
+0 */3 * * * curl -X POST "http://localhost:8000/sync/cron/sync?apikey=YOUR_API_KEY_HERE" >> /srv/project/backend_main_node/logs/sync_cron.log 2>&1
+
+
+# Или если сервер на другом хосте/порту:
+# 0 */3 * * * curl -X POST "http://your-server:8000/sync/cron/sync?apikey=YOUR_API_KEY_HERE" >> /srv/project/backend_main_node/logs/sync_cron.log 2>&1
+
+# Альтернативный вариант с wget:
+# 0 */3 * * * wget -q -O- --post-data="" "http://localhost:8000/sync/cron/sync?apikey=YOUR_API_KEY_HERE" >> /srv/project/backend_main_node/logs/sync_cron.log 2>&1
+
+# Объяснение формата:
+# 0 */3 * * * - каждые 3 часа в 0 минут (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
+# 
+# Альтернативные варианты:
+# 0 0,3,6,9,12,15,18,21 * * * - конкретные часы (00:00, 03:00, 06:00, 09:00, 12:00, 15:00, 18:00, 21:00)
+# */180 * * * * - каждые 180 минут (3 часа)
+
+# Для просмотра логов:
+# tail -f /srv/project/backend_main_node/logs/sync_cron.log
+
+# Для тестирования эндпоинта вручную:
+# curl -X POST "http://localhost:8000/sync/cron/sync?apikey=YOUR_API_KEY_HERE"
+
+# Примечание: Пересчет метрик по сотрудникам автоматически выполняется
+# в конце работы эндпоинта /sync/cron/sync за вчерашний день
+

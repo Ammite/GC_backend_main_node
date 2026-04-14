@@ -20,14 +20,10 @@ def get_rooms_endpoint(
     user = Depends(get_current_user),
 ):
     """
-    Получить список помещений (секций ресторана)
-    
-    **Query Parameters:**
-    - `organization_id` (optional): ID организации для фильтрации
-    
-    **Response:**
-    - Список помещений с их столами
-    - Каждое помещение содержит: ID, название, вместимость, список столов
+    Получить список помещений (секций ресторана).
+
+    organization_id — внутренний ID организации.
+    Возвращает список помещений с их столами (ID, название, вместимость, список столов).
     """
     try:
         rooms = get_rooms(db=db, organization_id=organization_id)
@@ -46,16 +42,10 @@ def get_tables_endpoint(
     user = Depends(get_current_user),
 ):
     """
-    Получить список столов
-    
-    **Query Parameters:**
-    - `room_id` (optional): ID помещения для фильтрации
-    - `status` (optional): Статус стола ("available" | "occupied" | "disabled" | "all")
-    - `organization_id` (optional): ID организации для фильтрации
-    
-    **Response:**
-    - Список столов с их статусами
-    - Каждый стол содержит: ID, номер, помещение, вместимость, статус, текущий заказ, назначенный официант
+    Получить список столов.
+
+    room_id, organization_id — внутренние ID. status: available | occupied | disabled | all.
+    Возвращает столы с ID, номером, помещением, вместимостью, статусом, текущим заказом и назначенным официантом.
     """
     try:
         tables = get_tables(

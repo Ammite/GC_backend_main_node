@@ -30,3 +30,21 @@ class ShiftStatusResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class StartShiftResponse(BaseModel):
+    """Ответ на запуск смены официанта"""
+
+    success: bool
+    message: str
+    shiftId: int
+
+
+class EndShiftResponse(BaseModel):
+    """Ответ на завершение смены официанта"""
+
+    success: bool
+    message: str
+    shiftId: int
+    startTime: Optional[str] = None  # "HH:mm"
+    endTime: Optional[str] = None  # "HH:mm"
+

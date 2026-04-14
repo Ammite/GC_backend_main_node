@@ -12,7 +12,7 @@ def get_all_menu_items(
     organization_id: Optional[int] = None,
     category_id: Optional[int] = None,
     name: Optional[str] = None,
-    limit: int = 100,
+    limit: Optional[int] = 100,
     offset: int = 0,
 ) -> List[ItemResponse]:
     # Джойним с menu_categories для получения названия категории
@@ -34,7 +34,10 @@ def get_all_menu_items(
     query = query.filter(Item.deleted == False)  # noqa: E712
     query = query.filter(Item.type_server == 'DISH')
     
-    results = query.offset(offset).limit(limit).all()
+    query = query.offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    results = query.all()
 
     return [ItemResponse(
         id=item.id, 

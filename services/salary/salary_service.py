@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from models.employees import Employees
 from models.user import User
@@ -15,10 +15,11 @@ from schemas.salary import (
     SalaryBreakdown,
     BonusItem,
     PenaltyItem,
-    QuestRewardItem
+    QuestRewardItem,
 )
 from schemas.quests import QuestResponse
 from services.quests.quests_service import get_waiter_quests
+from services.employees.employees_service import get_employee_summary
 
 
 def calculate_waiter_salary(
@@ -176,4 +177,33 @@ def calculate_waiter_salary(
     )
     
     return salary_response
+
+
+def get_waiter_daily_sales(
+    db: Session,
+    waiter_id: int,
+    date: Optional[str] = None,
+    organization_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Получить сумму продаж официанта за день и количество чеков.
+
+    Переиспользует логику get_employee_summary, чтобы данные совпадали
+    с остальными отчетами по сотрудникам.
+    """
+    try:
+        summary = get_employee_summary(
+            db=db,
+            employee_id=waiter_id,
+            date=date,
+            organization_id=organization_id,
+        )
+    except ValueError:
+        return None
+
+    return {
+        "date": date or datetime.now().strftime("%d.%m.%Y"),
+        "totalAmount": summary.get("totalAmount", 0.0),
+        "ordersCount": summary.get("ordersCount", 0),
+    }
 

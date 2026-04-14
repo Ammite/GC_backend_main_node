@@ -18,13 +18,13 @@ def get_goods(
     user = Depends(get_current_user),
 ):
     """
-    Получить товары по категориям (Заготовки и их дочерние группы)
-    
-    Возвращает массив категорий с товарами:
-    - category_id: ID категории
-    - category_iiko_id: iiko ID категории
+    Получить товары по категориям (Заготовки и их дочерние группы).
+
+    Возвращает массив категорий с товарами. Каждая категория содержит:
+    - category_id: внутренний ID категории (int)
+    - category_iiko_id: iiko UUID категории (str)
     - category_name: Название категории
-    - items: Массив товаров с полями name, price, code, description
+    - items: Массив товаров (id — внутренний, iiko_id — UUID из iiko, name, price, code, description)
     """
     try:
         categories = get_goods_by_categories(db=db)

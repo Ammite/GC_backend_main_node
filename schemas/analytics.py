@@ -55,6 +55,9 @@ class EmployeeAnalytic(BaseModel):
     name: str
     amount: str  # Форматированная сумма
     avatar: str
+    average_check: str  # Средний чек (форматированная строка)
+    checks_count: int  # Количество чеков
+    returns_count: int  # Количество возвратов
 
 
 class AnalyticsResponse(BaseModel):

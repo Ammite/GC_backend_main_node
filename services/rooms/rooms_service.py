@@ -67,6 +67,10 @@ def get_rooms(
             )
             table_responses.append(table_response)
         
+        # Пропускаем секции, у которых не осталось живых столов
+        if not table_responses:
+            continue
+
         # Формируем помещение
         room = RoomResponse(
             id=str(section.id),
@@ -75,7 +79,7 @@ def get_rooms(
             tables=table_responses
         )
         rooms.append(room)
-    
+
     return rooms
 
 

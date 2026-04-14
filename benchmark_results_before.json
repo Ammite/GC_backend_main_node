@@ -1,0 +1,186 @@
+{
+  "timestamp": "2025-12-14T18:42:20.067808",
+  "base_url": "http://localhost:8008",
+  "results": [
+    {
+      "endpoint": "analytics",
+      "path": "/analytics",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 52.403,
+      "min_time_seconds": 51.391,
+      "max_time_seconds": 54.07,
+      "errors": [],
+      "all_times": [
+        54.07,
+        51.748,
+        51.391
+      ]
+    },
+    {
+      "endpoint": "analytics",
+      "path": "/analytics",
+      "test_period": "week_23_11_2025",
+      "date": "23.11.2025",
+      "period": "week",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 52.471,
+      "min_time_seconds": 52.166,
+      "max_time_seconds": 52.848,
+      "errors": [],
+      "all_times": [
+        52.401,
+        52.166,
+        52.848
+      ]
+    },
+    {
+      "endpoint": "reports_orders",
+      "path": "/reports/orders",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 3.333,
+      "min_time_seconds": 3.282,
+      "max_time_seconds": 3.418,
+      "errors": [],
+      "all_times": [
+        3.418,
+        3.282,
+        3.298
+      ]
+    },
+    {
+      "endpoint": "reports_orders",
+      "path": "/reports/orders",
+      "test_period": "week_23_11_2025",
+      "date": "23.11.2025",
+      "period": "week",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 4.186,
+      "min_time_seconds": 4.039,
+      "max_time_seconds": 4.261,
+      "errors": [],
+      "all_times": [
+        4.257,
+        4.261,
+        4.039
+      ]
+    },
+    {
+      "endpoint": "reports_moneyflow",
+      "path": "/reports/moneyflow",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 23.893,
+      "min_time_seconds": 23.652,
+      "max_time_seconds": 24.067,
+      "errors": [],
+      "all_times": [
+        23.959,
+        24.067,
+        23.652
+      ]
+    },
+    {
+      "endpoint": "reports_moneyflow",
+      "path": "/reports/moneyflow",
+      "test_period": "week_23_11_2025",
+      "date": "23.11.2025",
+      "period": "week",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 24.113,
+      "min_time_seconds": 23.772,
+      "max_time_seconds": 24.352,
+      "errors": [],
+      "all_times": [
+        24.352,
+        24.216,
+        23.772
+      ]
+    },
+    {
+      "endpoint": "reports_profit_loss",
+      "path": "/reports/profit-loss",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 31.384,
+      "min_time_seconds": 30.925,
+      "max_time_seconds": 31.938,
+      "errors": [],
+      "all_times": [
+        31.289,
+        30.925,
+        31.938
+      ]
+    },
+    {
+      "endpoint": "reports_profit_loss",
+      "path": "/reports/profit-loss",
+      "test_period": "week_23_11_2025",
+      "date": "23.11.2025",
+      "period": "week",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 31.373,
+      "min_time_seconds": 31.124,
+      "max_time_seconds": 31.672,
+      "errors": [],
+      "all_times": [
+        31.672,
+        31.124,
+        31.324
+      ]
+    },
+    {
+      "endpoint": "reports_expenses",
+      "path": "/reports/expenses",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 8.083,
+      "min_time_seconds": 8.021,
+      "max_time_seconds": 8.123,
+      "errors": [],
+      "all_times": [
+        8.021,
+        8.123,
+        8.105
+      ]
+    },
+    {
+      "endpoint": "reports_expenses",
+      "path": "/reports/expenses",
+      "test_period": "week_23_11_2025",
+      "date": "23.11.2025",
+      "period": "week",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 8.412,
+      "min_time_seconds": 8.267,
+      "max_time_seconds": 8.511,
+      "errors": [],
+      "all_times": [
+        8.511,
+        8.267,
+        8.459
+      ]
+    }
+  ]
+}

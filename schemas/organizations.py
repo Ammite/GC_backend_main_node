@@ -7,6 +7,9 @@ class OrganizationResponse(BaseModel):
     name: str
     code: Optional[str] = None
     is_active: bool
+    address: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class OrganizationArrayResponse(BaseModel):

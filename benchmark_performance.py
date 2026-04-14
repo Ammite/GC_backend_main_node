@@ -48,19 +48,56 @@ TEST_PERIODS = [
         "name": "day_02_12_2025",
         "date": "02.12.2025",
         "period": "day"
-    },
-    {
-        "name": "week_23_11_2025",
-        "date": "23.11.2025",
-        "period": "week"
     }
 ]
+
+
+async def get_auth_token(client: httpx.AsyncClient) -> str:
+    """
+    Получить токен авторизации через /login или /register
+    
+    Returns:
+        Токен авторизации
+    """
+    # Пробуем зарегистрировать и залогинить тестового пользователя
+    test_login = f"benchmark_user_{int(time.time())}"
+    test_password = "benchmark_pass_123"
+    
+    try:
+        # Пробуем зарегистрироваться
+        register_response = await client.post(
+            f"{BASE_URL}/register",
+            json={"login": test_login, "password": test_password},
+            timeout=10.0
+        )
+        
+        if register_response.status_code == 200:
+            data = register_response.json()
+            if data.get("success") and data.get("access_token"):
+                return data["access_token"]
+        
+        # Если регистрация не удалась, пробуем залогиниться
+        login_response = await client.post(
+            f"{BASE_URL}/login",
+            json={"login": test_login, "password": test_password},
+            timeout=10.0
+        )
+        
+        if login_response.status_code == 200:
+            data = login_response.json()
+            if data.get("success") and data.get("access_token"):
+                return data["access_token"]
+    except Exception as e:
+        print(f"  ⚠️  Ошибка получения токена: {e}")
+    
+    return None
 
 
 async def measure_endpoint(
     client: httpx.AsyncClient,
     endpoint: Dict,
     test_period: Dict,
+    auth_token: str,
     iterations: int = 3
 ) -> Dict:
     """
@@ -70,6 +107,7 @@ async def measure_endpoint(
         client: HTTP клиент
         endpoint: информация об эндпоинте
         test_period: период тестирования
+        auth_token: токен авторизации
         iterations: количество итераций для усреднения
         
     Returns:
@@ -82,13 +120,17 @@ async def measure_endpoint(
         "period": test_period["period"]
     }
     
+    headers = {}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+    
     times = []
     errors = []
     
     for i in range(iterations):
         try:
             start_time = time.time()
-            response = await client.get(url, params=params, timeout=300.0)
+            response = await client.get(url, params=params, headers=headers, timeout=300.0)
             end_time = time.time()
             
             elapsed = end_time - start_time
@@ -147,6 +189,14 @@ async def run_benchmark(iterations: int = 3) -> List[Dict]:
             print(f"  Убедитесь, что сервер запущен на {BASE_URL}\n")
             return results
         
+        # Получаем токен авторизации
+        print("Получаю токен авторизации...")
+        auth_token = await get_auth_token(client)
+        if auth_token:
+            print(f"✓ Токен получен\n")
+        else:
+            print(f"⚠️  Не удалось получить токен, запросы могут вернуть 401\n")
+        
         total_tests = len(ENDPOINTS) * len(TEST_PERIODS)
         current_test = 0
         
@@ -155,7 +205,7 @@ async def run_benchmark(iterations: int = 3) -> List[Dict]:
                 current_test += 1
                 print(f"[{current_test}/{total_tests}] Тестирую {endpoint['name']} ({test_period['name']})...")
                 
-                result = await measure_endpoint(client, endpoint, test_period, iterations)
+                result = await measure_endpoint(client, endpoint, test_period, auth_token, iterations)
                 results.append(result)
                 
                 print(f"  Среднее время: {result['avg_time_seconds']:.3f}s (мин: {result['min_time_seconds']:.3f}s, макс: {result['max_time_seconds']:.3f}s)\n")

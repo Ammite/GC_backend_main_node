@@ -1,0 +1,51 @@
+{
+  "before_timestamp": "2025-12-14T18:42:20.067808",
+  "after_timestamp": "2025-12-14T20:07:41.159815",
+  "comparison": [
+    {
+      "endpoint": "analytics",
+      "test_period": "day_02_12_2025",
+      "before_time": 52.403,
+      "after_time": 16.096,
+      "improvement_percent": 69.28,
+      "speedup": 3.26,
+      "status": "improved"
+    },
+    {
+      "endpoint": "reports_orders",
+      "test_period": "day_02_12_2025",
+      "before_time": 3.333,
+      "after_time": 2.419,
+      "improvement_percent": 27.42,
+      "speedup": 1.38,
+      "status": "improved"
+    },
+    {
+      "endpoint": "reports_moneyflow",
+      "test_period": "day_02_12_2025",
+      "before_time": 23.893,
+      "after_time": 9.714,
+      "improvement_percent": 59.34,
+      "speedup": 2.46,
+      "status": "improved"
+    },
+    {
+      "endpoint": "reports_profit_loss",
+      "test_period": "day_02_12_2025",
+      "before_time": 31.384,
+      "after_time": 0.02,
+      "improvement_percent": 99.94,
+      "speedup": 1569.2,
+      "status": "improved"
+    },
+    {
+      "endpoint": "reports_expenses",
+      "test_period": "day_02_12_2025",
+      "before_time": 8.083,
+      "after_time": 0.014,
+      "improvement_percent": 99.83,
+      "speedup": 577.36,
+      "status": "improved"
+    }
+  ]
+}

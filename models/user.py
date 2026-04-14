@@ -11,3 +11,4 @@ class User(Base):
     login = Column(String(100), unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
     roles_id = Column(Integer, ForeignKey("roles.id"), nullable=True)
+    app_role = Column(String(50), nullable=True)  # "Владелец", "Менеджер", "Официант"

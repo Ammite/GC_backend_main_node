@@ -151,3 +151,23 @@ class SalesDynamicsResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class PersonnelEmployeeItem(BaseModel):
+    """Элемент отчета по сотруднику"""
+    id: int
+    name: str
+    role: str
+    totalAmount: float  # Сумма чеков за период
+    ordersCount: int  # Количество чеков за период
+    shiftDuration: str  # Общая длительность смен за период (HH:mm:ss)
+
+
+class PersonnelReportResponse(BaseModel):
+    """Отчет по персоналу"""
+    success: bool
+    message: str
+    employees: List[PersonnelEmployeeItem]
+
+    class Config:
+        from_attributes = True
+

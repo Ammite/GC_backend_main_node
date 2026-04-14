@@ -18,16 +18,24 @@ def list_organizations(
     name: Optional[str] = Query(default=None),
     code: Optional[str] = Query(default=None),
     is_active: Optional[bool] = Query(default=None),
+    include_legacy: bool = Query(default=False, description="Показать legacy-организации (остатки от старой iiko)"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
+    """
+    Получить список организаций.
+
+    По умолчанию исключает legacy-организации (записи от старой iiko до миграции).
+    Чтобы их получить — передавай include_legacy=true.
+    """
     organizations = get_organizations(
         db=db,
         name=name,
         code=code,
         is_active=is_active,
+        include_legacy=include_legacy,
         limit=limit,
         offset=offset,
     )

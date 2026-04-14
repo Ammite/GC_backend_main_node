@@ -719,16 +719,51 @@ class IikoParser:
         """Парсинг транзакций"""
         if not data:
             return []
-        
+
         parsed_transactions = []
         for transaction in data:
+            # Вычисляем иерархии из полных строк
+            product_hierarchy = transaction.get("Product.Hierarchy") or ""
+            product_parts = product_hierarchy.split("/", 2) if product_hierarchy else []
+
+            contr_product_hierarchy = transaction.get("Contr-Product.Hierarchy") or ""
+            contr_parts = contr_product_hierarchy.split("/", 2) if contr_product_hierarchy else []
+
+            account_hierarchy_full = transaction.get("Account.AccountHierarchyFull") or ""
+            account_parts = account_hierarchy_full.split("/", 2) if account_hierarchy_full else []
+
+            cf_hierarchy = transaction.get("CashFlowCategory.Hierarchy") or ""
+            cf_parts = cf_hierarchy.split("/", 2) if cf_hierarchy else []
+
+            # Вычисляем временные группировки из DateTime.Typed
+            dt_typed = transaction.get("DateTime.Typed")
+            dt_year = dt_quarter = dt_month = dt_week_in_year = dt_week_in_month = dt_day_of_week = dt_hour = None
+            if dt_typed:
+                try:
+                    if isinstance(dt_typed, str):
+                        dt_obj = datetime.fromisoformat(dt_typed.replace('Z', '+00:00'))
+                    elif isinstance(dt_typed, datetime):
+                        dt_obj = dt_typed
+                    else:
+                        dt_obj = None
+                    if dt_obj:
+                        dt_year = dt_obj.year
+                        dt_quarter = (dt_obj.month - 1) // 3 + 1
+                        dt_month = dt_obj.month
+                        dt_week_in_year = dt_obj.isocalendar()[1]
+                        dt_week_in_month = (dt_obj.day - 1) // 7 + 1
+                        dt_day_of_week = dt_obj.isoweekday()  # 1=Mon, 7=Sun
+                        dt_hour = dt_obj.hour
+                except (ValueError, TypeError):
+                    pass
+
             parsed_transaction = {
                 # Основные поля
                 "iiko_id": _safe_get(transaction, "Id"),
                 "order_id": _safe_get(transaction, "OrderId"),
                 "order_num": transaction.get("OrderNum"),
                 "document": transaction.get("Document"),
-                
+
                 # Финансовые поля
                 "amount": transaction.get("Amount"),
                 "sum_resigned": _extract_numeric_value(transaction.get("Sum.ResignedSum")),
@@ -736,23 +771,23 @@ class IikoParser:
                 "sum_outgoing": _extract_numeric_value(transaction.get("Sum.Outgoing")),
                 "sum_part_of_income": _extract_numeric_value(transaction.get("Sum.PartOfIncome")),
                 "sum_part_of_total_income": _extract_numeric_value(transaction.get("Sum.PartOfTotalIncome")),
-                
+
                 # Остатки
                 "start_balance_money": _extract_numeric_value(transaction.get("StartBalance.Money")),
                 "final_balance_money": _extract_numeric_value(transaction.get("FinalBalance.Money")),
                 "start_balance_amount": _extract_numeric_value(transaction.get("StartBalance.Amount")),
                 "final_balance_amount": _extract_numeric_value(transaction.get("FinalBalance.Amount")),
-                
+
                 # Приход/расход
                 "amount_in": _extract_numeric_value(transaction.get("Amount.In")),
                 "amount_out": _extract_numeric_value(transaction.get("Amount.Out")),
                 "contr_amount": transaction.get("Contr-Amount"),
-                
+
                 # Типы и категории
                 "transaction_type": transaction.get("TransactionType"),
                 "transaction_type_code": _safe_get(transaction, "TransactionType.Code"),
                 "transaction_side": transaction.get("TransactionSide"),
-                
+
                 # Номенклатура
                 "product_id": _safe_get(transaction, "Product.Id"),
                 "product_name": transaction.get("Product.Name"),
@@ -764,52 +799,52 @@ class IikoParser:
                 "product_avg_sum": _extract_numeric_value(transaction.get("Product.AvgSum")),
                 "product_cooking_place_type": transaction.get("Product.CookingPlaceType"),
                 "product_accounting_category": transaction.get("Product.AccountingCategory"),
-                
-                # Иерархия номенклатуры
-                "product_top_parent": transaction.get("Product.TopParent"),
-                "product_second_parent": transaction.get("Product.SecondParent"),
-                "product_third_parent": transaction.get("Product.ThirdParent"),
-                "product_hierarchy": transaction.get("Product.Hierarchy"),
-                
-                # Пользовательские свойства номенклатуры
-                "product_tag_id": _safe_get(transaction, "Product.Tag.Id"),
-                "product_tag_name": transaction.get("Product.Tag.Name"),
-                "product_tags_ids_combo": transaction.get("Product.Tags.IdsCombo"),
-                "product_tags_names_combo": transaction.get("Product.Tags.NamesCombo"),
-                
-                # Алкогольная продукция
-                "product_alcohol_class": transaction.get("Product.AlcoholClass"),
-                "product_alcohol_class_code": _safe_get(transaction, "Product.AlcoholClass.Code"),
-                "product_alcohol_class_group": transaction.get("Product.AlcoholClass.Group"),
-                "product_alcohol_class_type": transaction.get("Product.AlcoholClass.Type"),
-                
-                # Корреспондент (контрагент)
-                "contr_product_id": _safe_get(transaction, "Contr-Product.Id"),
-                "contr_product_name": transaction.get("Contr-Product.Name"),
-                "contr_product_num": transaction.get("Contr-Product.Num"),
-                "contr_product_category_id": _safe_get(transaction, "Contr-Product.Category.Id"),
-                "contr_product_category": transaction.get("Contr-Product.Category"),
-                "contr_product_type": transaction.get("Contr-Product.Type"),
-                "contr_product_measure_unit": transaction.get("Contr-Product.MeasureUnit"),
-                "contr_product_accounting_category": transaction.get("Contr-Product.AccountingCategory"),
-                
-                # Иерархия корреспондента
-                "contr_product_top_parent": transaction.get("Contr-Product.TopParent"),
-                "contr_product_second_parent": transaction.get("Contr-Product.SecondParent"),
-                "contr_product_third_parent": transaction.get("Contr-Product.ThirdParent"),
-                "contr_product_hierarchy": transaction.get("Contr-Product.Hierarchy"),
-                
-                # Пользовательские свойства корреспондента
-                "contr_product_tags_ids_combo": transaction.get("Contr-Product.Tags.IdsCombo"),
-                "contr_product_tags_names_combo": transaction.get("Contr-Product.Tags.NamesCombo"),
-                
-                # Алкогольная продукция корреспондента
-                "contr_product_alcohol_class": transaction.get("Contr-Product.AlcoholClass"),
-                "contr_product_alcohol_class_code": _safe_get(transaction, "Contr-Product.AlcoholClass.Code"),
-                "contr_product_alcohol_class_group": transaction.get("Contr-Product.AlcoholClass.Group"),
-                "contr_product_alcohol_class_type": transaction.get("Contr-Product.AlcoholClass.Type"),
-                "contr_product_cooking_place_type": transaction.get("Contr-Product.CookingPlaceType"),
-                
+
+                # Иерархия номенклатуры (вычислено из Product.Hierarchy)
+                "product_top_parent": product_parts[0] if len(product_parts) > 0 else None,
+                "product_second_parent": product_parts[1] if len(product_parts) > 1 else None,
+                "product_third_parent": product_parts[2] if len(product_parts) > 2 else None,
+                "product_hierarchy": product_hierarchy or None,
+
+                # Пользовательские свойства номенклатуры (убраны из OLAP)
+                "product_tag_id": None,
+                "product_tag_name": None,
+                "product_tags_ids_combo": None,
+                "product_tags_names_combo": None,
+
+                # Алкогольная продукция (убраны из OLAP)
+                "product_alcohol_class": None,
+                "product_alcohol_class_code": None,
+                "product_alcohol_class_group": None,
+                "product_alcohol_class_type": None,
+
+                # Корреспондент (контрагент) — детали убраны из OLAP, оставлена только иерархия
+                "contr_product_id": None,
+                "contr_product_name": None,
+                "contr_product_num": None,
+                "contr_product_category_id": None,
+                "contr_product_category": None,
+                "contr_product_type": None,
+                "contr_product_measure_unit": None,
+                "contr_product_accounting_category": None,
+
+                # Иерархия корреспондента (вычислено из Contr-Product.Hierarchy)
+                "contr_product_top_parent": contr_parts[0] if len(contr_parts) > 0 else None,
+                "contr_product_second_parent": contr_parts[1] if len(contr_parts) > 1 else None,
+                "contr_product_third_parent": contr_parts[2] if len(contr_parts) > 2 else None,
+                "contr_product_hierarchy": contr_product_hierarchy or None,
+
+                # Пользовательские свойства корреспондента (убраны из OLAP)
+                "contr_product_tags_ids_combo": None,
+                "contr_product_tags_names_combo": None,
+
+                # Алкогольная продукция корреспондента (убраны из OLAP)
+                "contr_product_alcohol_class": None,
+                "contr_product_alcohol_class_code": None,
+                "contr_product_alcohol_class_group": None,
+                "contr_product_alcohol_class_type": None,
+                "contr_product_cooking_place_type": None,
+
                 # Счета
                 "account_id": _safe_get(transaction, "Account.Id"),
                 "account_name": transaction.get("Account.Name"),
@@ -819,78 +854,78 @@ class IikoParser:
                 "account_store_or_account": transaction.get("Account.StoreOrAccount"),
                 "account_counteragent_type": transaction.get("Account.CounteragentType"),
                 "account_is_cash_flow_account": transaction.get("Account.IsCashFlowAccount"),
-                
-                # Иерархия счетов
-                "account_hierarchy_top": transaction.get("Account.AccountHierarchyTop"),
-                "account_hierarchy_second": transaction.get("Account.AccountHierarchySecond"),
-                "account_hierarchy_third": transaction.get("Account.AccountHierarchyThird"),
-                "account_hierarchy_full": transaction.get("Account.AccountHierarchyFull"),
-                
+
+                # Иерархия счетов (вычислено из Account.AccountHierarchyFull)
+                "account_hierarchy_top": account_parts[0] if len(account_parts) > 0 else None,
+                "account_hierarchy_second": account_parts[1] if len(account_parts) > 1 else None,
+                "account_hierarchy_third": account_parts[2] if len(account_parts) > 2 else None,
+                "account_hierarchy_full": account_hierarchy_full or None,
+
                 # Корреспондентские счета
                 "contr_account_name": transaction.get("Contr-Account.Name"),
                 "contr_account_code": _safe_get(transaction, "Contr-Account.Code"),
                 "contr_account_type": transaction.get("Contr-Account.Type"),
                 "contr_account_group": transaction.get("Contr-Account.Group"),
-                
+
                 # Контрагенты
                 "counteragent_id": _safe_get(transaction, "Counteragent.Id"),
                 "counteragent_name": transaction.get("Counteragent.Name"),
-                
-                # Организация и подразделения
+
+                # Организация и подразделения (Department.Category1-5 убраны из OLAP)
                 "department": transaction.get("Department"),
-                "department_code": transaction.get("Department.Code"),  # Это поле будем использовать для поиска организации
+                "department_code": transaction.get("Department.Code"),
                 "department_jur_person": transaction.get("Department.JurPerson"),
-                "department_category1": transaction.get("Department.Category1"),
-                "department_category2": transaction.get("Department.Category2"),
-                "department_category3": transaction.get("Department.Category3"),
-                "department_category4": transaction.get("Department.Category4"),
-                "department_category5": transaction.get("Department.Category5"),
-                
+                "department_category1": None,
+                "department_category2": None,
+                "department_category3": None,
+                "department_category4": None,
+                "department_category5": None,
+
                 # Сессии и кассы
                 "session_group_id": _safe_get(transaction, "Session.GroupId"),
                 "session_group": transaction.get("Session.Group"),
                 "session_cash_register": transaction.get("Session.CashRegister"),
                 "session_restaurant_section": transaction.get("Session.RestaurantSection"),
-                
+
                 # Концепции
                 "conception": transaction.get("Conception"),
                 "conception_code": _safe_get(transaction, "Conception.Code"),
-                
+
                 # Склады
                 "store": transaction.get("Store"),
-                
-                # Движение денежных средств
+
+                # Движение денежных средств (HierarchyLevel1-3 вычислены из CashFlowCategory.Hierarchy)
                 "cash_flow_category": transaction.get("CashFlowCategory"),
                 "cash_flow_category_type": transaction.get("CashFlowCategory.Type"),
-                "cash_flow_category_hierarchy": transaction.get("CashFlowCategory.Hierarchy"),
-                "cash_flow_category_hierarchy_level1": transaction.get("CashFlowCategory.HierarchyLevel1"),
-                "cash_flow_category_hierarchy_level2": transaction.get("CashFlowCategory.HierarchyLevel2"),
-                "cash_flow_category_hierarchy_level3": transaction.get("CashFlowCategory.HierarchyLevel3"),
-                
+                "cash_flow_category_hierarchy": cf_hierarchy or None,
+                "cash_flow_category_hierarchy_level1": cf_parts[0] if len(cf_parts) > 0 else None,
+                "cash_flow_category_hierarchy_level2": cf_parts[1] if len(cf_parts) > 1 else None,
+                "cash_flow_category_hierarchy_level3": cf_parts[2] if len(cf_parts) > 2 else None,
+
                 # Даты и время
                 "date_time": transaction.get("DateTime.Typed"),
                 "date_time_typed": transaction.get("DateTime.Typed"),
                 "date_typed": transaction.get("DateTime.DateTyped"),
                 "date_secondary_date_time_typed": transaction.get("DateSecondary.DateTimeTyped"),
                 "date_secondary_date_typed": transaction.get("DateSecondary.DateTyped"),
-                
-                # Временные группировки
-                "date_time_year": transaction.get("DateTime.Year"),
-                "date_time_quarter": transaction.get("DateTime.Quarter"),
-                "date_time_month": transaction.get("DateTime.Month"),
-                "date_time_week_in_year": transaction.get("DateTime.WeekInYear"),
-                "date_time_week_in_month": transaction.get("DateTime.WeekInMonth"),
-                "date_time_day_of_week": transaction.get("DateTime.DayOfWeak"),
-                "date_time_hour": transaction.get("DateTime.Hour"),
-                
+
+                # Временные группировки (вычислены из DateTime.Typed)
+                "date_time_year": dt_year,
+                "date_time_quarter": dt_quarter,
+                "date_time_month": dt_month,
+                "date_time_week_in_year": dt_week_in_year,
+                "date_time_week_in_month": dt_week_in_month,
+                "date_time_day_of_week": dt_day_of_week,
+                "date_time_hour": dt_hour,
+
                 # Комментарии и дополнительные данные
                 "comment": transaction.get("Comment"),
-                
+
                 # Дополнительные данные
                 "additional_data": transaction.get("AdditionalData")
             }
             parsed_transactions.append(parsed_transaction)
-        
+
         logger.info(f"Парсинг транзакций: {len(parsed_transactions)} записей")
         return parsed_transactions
 
@@ -899,27 +934,67 @@ class IikoParser:
         """Парсинг продаж"""
         if not data:
             return []
-        
+
         parsed_sales = []
         for sale in data:
+            # Вычисляем иерархию DishGroup из полной строки
+            dish_group_hierarchy = sale.get("DishGroup.Hierarchy") or ""
+            dg_parts = dish_group_hierarchy.split("/", 2) if dish_group_hierarchy else []
+
+            # Вычисляем временные группировки из OpenTime
+            open_time_str = sale.get("OpenTime")
+            close_time_str = sale.get("CloseTime")
+            year_open = quarter_open = month_open = None
+            week_in_year_open = week_in_month_open = day_of_week_open = hour_open = hour_close = None
+            if open_time_str:
+                try:
+                    if isinstance(open_time_str, str):
+                        ot = datetime.fromisoformat(open_time_str.replace('Z', '+00:00'))
+                    elif isinstance(open_time_str, datetime):
+                        ot = open_time_str
+                    else:
+                        ot = None
+                    if ot:
+                        year_open = ot.year
+                        quarter_open = (ot.month - 1) // 3 + 1
+                        month_open = ot.month
+                        week_in_year_open = ot.isocalendar()[1]
+                        week_in_month_open = (ot.day - 1) // 7 + 1
+                        day_of_week_open = ot.isoweekday()
+                        hour_open = ot.hour
+                except (ValueError, TypeError):
+                    pass
+            if close_time_str:
+                try:
+                    if isinstance(close_time_str, str):
+                        ct = datetime.fromisoformat(close_time_str.replace('Z', '+00:00'))
+                    elif isinstance(close_time_str, datetime):
+                        ct = close_time_str
+                    else:
+                        ct = None
+                    if ct:
+                        hour_close = ct.hour
+                except (ValueError, TypeError):
+                    pass
+
             parsed_sale = {
                 # Основные поля
                 "item_sale_event_id": _safe_get(sale, "ItemSaleEvent.Id"),
-                
-                # Организация и подразделения
+
+                # Организация и подразделения (Department.Category1-5 убраны из OLAP)
                 "department": sale.get("Department"),
-                "department_code": sale.get("Department.Code"),  # Это поле будем использовать для поиска организации
+                "department_code": sale.get("Department.Code"),
                 "department_id": _safe_get(sale, "Department.Id"),
-                "department_category1": sale.get("Department.Category1"),
-                "department_category2": sale.get("Department.Category2"),
-                "department_category3": sale.get("Department.Category3"),
-                "department_category4": sale.get("Department.Category4"),
-                "department_category5": sale.get("Department.Category5"),
-                
+                "department_category1": None,
+                "department_category2": None,
+                "department_category3": None,
+                "department_category4": None,
+                "department_category5": None,
+
                 # Концепция
                 "conception": sale.get("Conception"),
                 "conception_code": _safe_get(sale, "Conception.Code"),
-                
+
                 # Заказ
                 "order_id": _safe_get(sale, "UniqOrderId.Id"),
                 "order_num": sale.get("OrderNum"),
@@ -929,23 +1004,23 @@ class IikoParser:
                 "order_service_type": sale.get("OrderServiceType"),
                 "order_comment": sale.get("OrderComment"),
                 "order_deleted": sale.get("OrderDeleted"),
-                
+
                 # Время заказа
                 "open_time": sale.get("OpenTime"),
                 "close_time": sale.get("CloseTime"),
                 "precheque_time": sale.get("PrechequeTime"),
                 "open_date_typed": sale.get("OpenDate.Typed"),
-                
-                # Временные группировки
-                "year_open": sale.get("YearOpen"),
-                "quarter_open": sale.get("QuarterOpen"),
-                "month_open": sale.get("Mounth"),
-                "week_in_year_open": sale.get("WeekInYearOpen"),
-                "week_in_month_open": sale.get("WeekInMonthOpen"),
-                "day_of_week_open": sale.get("DayOfWeekOpen"),
-                "hour_open": sale.get("HourOpen"),
-                "hour_close": sale.get("HourClose"),
-                
+
+                # Временные группировки (вычислены из OpenTime/CloseTime)
+                "year_open": year_open,
+                "quarter_open": quarter_open,
+                "month_open": month_open,
+                "week_in_year_open": week_in_year_open,
+                "week_in_month_open": week_in_month_open,
+                "day_of_week_open": day_of_week_open,
+                "hour_open": hour_open,
+                "hour_close": hour_close,
+
                 # Блюдо/товар
                 "dish_id": _safe_get(sale, "DishId"),
                 "dish_name": sale.get("DishName"),
@@ -956,41 +1031,41 @@ class IikoParser:
                 "dish_type": sale.get("DishType"),
                 "dish_measure_unit": sale.get("DishMeasureUnit"),
                 "dish_amount_int": sale.get("DishAmountInt"),
-                "dish_amount_int_per_order": sale.get("DishAmountInt.PerOrder"),
-                
+                "dish_amount_int_per_order": None,  # убран из OLAP
+
                 # Категория блюда
                 "dish_category": sale.get("DishCategory"),
                 "dish_category_id": _safe_get(sale, "DishCategory.Id"),
                 "dish_category_accounting": sale.get("DishCategory.Accounting"),
                 "dish_category_accounting_id": _safe_get(sale, "DishCategory.Accounting.Id"),
-                
-                # Группа блюда
+
+                # Группа блюда (иерархия вычислена из DishGroup.Hierarchy)
                 "dish_group": sale.get("DishGroup"),
                 "dish_group_id": _safe_get(sale, "DishGroup.Id"),
                 "dish_group_num": sale.get("DishGroup.Num"),
-                "dish_group_hierarchy": sale.get("DishGroup.Hierarchy"),
-                "dish_group_top_parent": sale.get("DishGroup.TopParent"),
-                "dish_group_second_parent": sale.get("DishGroup.SecondParent"),
-                "dish_group_third_parent": sale.get("DishGroup.ThirdParent"),
-                
-                # Теги блюда
-                "dish_tag_id": _safe_get(sale, "DishTag.Id"),
-                "dish_tag_name": sale.get("DishTag.Name"),
-                "dish_tags_ids_combo": sale.get("DishTags.IdsCombo"),
-                "dish_tags_names_combo": sale.get("DishTags.NamesCombo"),
-                
-                # Налоговая категория
-                "dish_tax_category_id": _safe_get(sale, "DishTaxCategory.Id"),
-                "dish_tax_category_name": sale.get("DishTaxCategory.Name"),
-                
-                # Размер блюда
+                "dish_group_hierarchy": dish_group_hierarchy or None,
+                "dish_group_top_parent": dg_parts[0] if len(dg_parts) > 0 else None,
+                "dish_group_second_parent": dg_parts[1] if len(dg_parts) > 1 else None,
+                "dish_group_third_parent": dg_parts[2] if len(dg_parts) > 2 else None,
+
+                # Теги блюда (убраны из OLAP)
+                "dish_tag_id": None,
+                "dish_tag_name": None,
+                "dish_tags_ids_combo": None,
+                "dish_tags_names_combo": None,
+
+                # Налоговая категория (убрана из OLAP)
+                "dish_tax_category_id": None,
+                "dish_tax_category_name": None,
+
+                # Размер блюда (детали убраны из OLAP, оставлен только Id)
                 "dish_size_id": _safe_get(sale, "DishSize.Id"),
-                "dish_size_name": sale.get("DishSize.Name"),
-                "dish_size_short_name": sale.get("DishSize.ShortName"),
-                "dish_size_priority": sale.get("DishSize.Priority"),
-                "dish_size_scale_id": _safe_get(sale, "DishSize.Scale.Id"),
-                "dish_size_scale_name": sale.get("DishSize.Scale.Name"),
-                
+                "dish_size_name": None,
+                "dish_size_short_name": None,
+                "dish_size_priority": None,
+                "dish_size_scale_id": None,
+                "dish_size_scale_name": None,
+
                 # Финансовые поля
                 "dish_sum_int": sale.get("DishSumInt"),
                 "dish_sum_int_average_price_with_vat": _extract_numeric_value(sale.get("DishSumInt.averagePriceWithVAT")),
@@ -1003,7 +1078,7 @@ class IikoParser:
                 "dish_discount_sum_int_without_vat": sale.get("DishDiscountSumInt.withoutVAT"),
                 "dish_return_sum": sale.get("DishReturnSum"),
                 "dish_return_sum_without_vat": sale.get("DishReturnSum.withoutVAT"),
-                
+
                 # Скидки и наценки
                 "discount_percent": sale.get("DiscountPercent"),
                 "discount_sum": sale.get("DiscountSum"),
@@ -1012,29 +1087,29 @@ class IikoParser:
                 "increase_sum": sale.get("IncreaseSum"),
                 "full_sum": sale.get("fullSum"),
                 "sum_after_discount_without_vat": sale.get("sumAfterDiscountWithoutVAT"),
-                
+
                 # НДС
                 "vat_percent": _extract_numeric_value(sale.get("VAT.Percent")),
                 "vat_sum": _extract_numeric_value(sale.get("VAT.Sum")),
-                
+
                 # Сессия и касса
                 "session_id": sale.get("SessionID"),
                 "session_num": sale.get("SessionNum"),
                 "cash_register_name": sale.get("CashRegisterName"),
                 "cash_register_name_serial_number": sale.get("CashRegisterName.CashRegisterSerialNumber"),
                 "cash_register_name_number": sale.get("CashRegisterName.Number"),
-                
+
                 # Ресторанная секция
                 "restaurant_section": sale.get("RestaurantSection"),
                 "restaurant_section_id": _safe_get(sale, "RestaurantSection.Id"),
-                
+
                 # Стол
                 "table_num": sale.get("TableNum"),
-                
+
                 # Гости
                 "guest_num": sale.get("GuestNum"),
                 "guest_num_avg": _extract_numeric_value(sale.get("GuestNum.Avg")),
-                
+
                 # Официант
                 "waiter_name": sale.get("WaiterName"),
                 "waiter_name_id": sale.get("WaiterName.ID"),
@@ -1042,16 +1117,16 @@ class IikoParser:
                 "order_waiter_name": sale.get("OrderWaiter.Name"),
                 "waiter_team_id": _safe_get(sale, "WaiterTeam.Id"),
                 "waiter_team_name": sale.get("WaiterTeam.Name"),
-                
+
                 # Кассир
                 "cashier": sale.get("Cashier"),
                 "cashier_code": _safe_get(sale, "Cashier.Code"),
                 "cashier_id": _safe_get(sale, "Cashier.Id"),
-                
+
                 # Пользователь авторизации
                 "auth_user": sale.get("AuthUser"),
                 "auth_user_id": sale.get("AuthUser.Id"),
-                
+
                 # Платежи
                 "pay_types": sale.get("PayTypes"),
                 "pay_types_combo": sale.get("PayTypes.Combo"),
@@ -1059,146 +1134,146 @@ class IikoParser:
                 "pay_types_group": sale.get("PayTypes.Group"),
                 "pay_types_is_print_cheque": sale.get("PayTypes.IsPrintCheque"),
                 "pay_types_voucher_num": sale.get("PayTypes.VoucherNum"),
-                
+
                 # Карты
                 "card": sale.get("Card"),
                 "card_number": sale.get("CardNumber"),
                 "card_owner": sale.get("CardOwner"),
                 "card_type": sale.get("CardType"),
                 "card_type_name": sale.get("CardTypeName"),
-                
+
                 # Бонусы
                 "bonus_card_number": sale.get("Bonus.CardNumber"),
                 "bonus_sum": _extract_numeric_value(sale.get("Bonus.Sum")),
                 "bonus_type": sale.get("Bonus.Type"),
-                
+
                 # Фискальный чек
                 "fiscal_cheque_number": _extract_fiscal_cheque_number(sale.get("FiscalChequeNumber")),
-                
+
                 # Валюты
                 "currencies_currency": sale.get("Currencies.Currency"),
                 "currencies_currency_rate": sale.get("Currencies.CurrencyRate"),
                 "currencies_sum_in_currency": _extract_currency_sum(sale.get("Currencies.SumInCurrency")),
-                
-                # Готовка
+
+                # Готовка (тайминги убраны из OLAP, оставлены place поля)
                 "cooking_place": sale.get("CookingPlace"),
                 "cooking_place_id": sale.get("CookingPlace.Id"),
                 "cooking_place_type": sale.get("CookingPlaceType"),
-                
-                # Время готовки
-                "cooking_cooking_duration_avg": _extract_numeric_value(sale.get("Cooking.CookingDuration.Avg")),
-                "cooking_cooking1_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking1Duration.Avg")),
-                "cooking_cooking2_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking2Duration.Avg")),
-                "cooking_cooking3_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking3Duration.Avg")),
-                "cooking_cooking4_duration_avg": _extract_numeric_value(sale.get("Cooking.Cooking4Duration.Avg")),
-                "cooking_cooking_late_time_avg": _extract_numeric_value(sale.get("Cooking.CookingLateTime.Avg")),
-                "cooking_feed_late_time_avg": _extract_numeric_value(sale.get("Cooking.FeedLateTime.Avg")),
-                "cooking_guest_wait_time_avg": _extract_numeric_value(sale.get("Cooking.GuestWaitTime.Avg")),
-                "cooking_kitchen_time_avg": _extract_numeric_value(sale.get("Cooking.KitchenTime.Avg")),
-                "cooking_serve_number": sale.get("Cooking.ServeNumber"),
-                "cooking_serve_time_avg": _extract_numeric_value(sale.get("Cooking.ServeTime.Avg")),
-                "cooking_start_delay_time_avg": _extract_numeric_value(sale.get("Cooking.StartDelayTime.Avg")),
-                
-                # Время заказа
-                "order_time_average_order_time": sale.get("OrderTime.AverageOrderTime"),
-                "order_time_average_precheque_time": sale.get("OrderTime.AveragePrechequeTime"),
-                "order_time_order_length": _extract_numeric_value(sale.get("OrderTime.OrderLength")),
-                "order_time_order_length_sum": _extract_numeric_value(sale.get("OrderTime.OrderLengthSum")),
-                "order_time_precheque_length": _extract_numeric_value(sale.get("OrderTime.PrechequeLength")),
-                
-                # Доставка
+
+                # Время готовки (убрано из OLAP)
+                "cooking_cooking_duration_avg": None,
+                "cooking_cooking1_duration_avg": None,
+                "cooking_cooking2_duration_avg": None,
+                "cooking_cooking3_duration_avg": None,
+                "cooking_cooking4_duration_avg": None,
+                "cooking_cooking_late_time_avg": None,
+                "cooking_feed_late_time_avg": None,
+                "cooking_guest_wait_time_avg": None,
+                "cooking_kitchen_time_avg": None,
+                "cooking_serve_number": None,
+                "cooking_serve_time_avg": None,
+                "cooking_start_delay_time_avg": None,
+
+                # Время заказа (убрано из OLAP)
+                "order_time_average_order_time": None,
+                "order_time_average_precheque_time": None,
+                "order_time_order_length": None,
+                "order_time_order_length_sum": None,
+                "order_time_precheque_length": None,
+
+                # Доставка (детали убраны из OLAP, оставлен только IsDelivery)
                 "delivery_is_delivery": sale.get("Delivery.IsDelivery"),
-                "delivery_id": sale.get("Delivery.Id"),
-                "delivery_number": sale.get("Delivery.Number"),
-                "delivery_address": sale.get("Delivery.Address"),
-                "delivery_city": sale.get("Delivery.City"),
-                "delivery_street": sale.get("Delivery.Street"),
-                "delivery_index": sale.get("Delivery.Index"),
-                "delivery_region": sale.get("Delivery.Region"),
-                "delivery_zone": sale.get("Delivery.Zone"),
-                "delivery_phone": sale.get("Delivery.Phone"),
-                "delivery_email": sale.get("Delivery.Email"),
-                "delivery_courier": sale.get("Delivery.Courier"),
-                "delivery_courier_id": sale.get("Delivery.Courier.Id"),
-                "delivery_operator": sale.get("Delivery.DeliveryOperator"),
-                "delivery_operator_id": sale.get("Delivery.DeliveryOperator.Id"),
-                "delivery_service_type": sale.get("Delivery.ServiceType"),
-                "delivery_expected_time": sale.get("Delivery.ExpectedTime"),
-                "delivery_actual_time": sale.get("Delivery.ActualTime"),
-                "delivery_close_time": sale.get("Delivery.CloseTime"),
-                "delivery_cooking_finish_time": sale.get("Delivery.CookingFinishTime"),
-                "delivery_send_time": sale.get("Delivery.SendTime"),
-                "delivery_bill_time": sale.get("Delivery.BillTime"),
-                "delivery_print_time": sale.get("Delivery.PrintTime"),
-                "delivery_delay": sale.get("Delivery.Delay"),
-                "delivery_delay_avg": _extract_numeric_value(sale.get("Delivery.DelayAvg")),
-                "delivery_way_duration": _extract_numeric_value(sale.get("Delivery.WayDuration")),
-                "delivery_way_duration_avg": _extract_numeric_value(sale.get("Delivery.WayDurationAvg")),
-                "delivery_way_duration_sum": _extract_numeric_value(sale.get("Delivery.WayDurationSum")),
-                "delivery_cooking_to_send_duration": _extract_numeric_value(sale.get("Delivery.CookingToSendDuration")),
-                "delivery_diff_between_actual_delivery_time_and_predicted_delivery_time": sale.get("Delivery.DiffBetweenActualDeliveryTimeAndPredictedDeliveryTime"),
-                "delivery_predicted_cooking_complete_time": sale.get("Delivery.PredictedCookingCompleteTime"),
-                "delivery_predicted_delivery_time": sale.get("Delivery.PredictedDeliveryTime"),
-                "delivery_customer_name": sale.get("Delivery.CustomerName"),
-                "delivery_customer_phone": sale.get("Delivery.CustomerPhone"),
-                "delivery_customer_email": sale.get("Delivery.CustomerEmail"),
-                "delivery_customer_card_number": sale.get("Delivery.CustomerCardNumber"),
-                "delivery_customer_card_type": sale.get("Delivery.CustomerCardType"),
-                "delivery_customer_comment": sale.get("Delivery.CustomerComment"),
-                "delivery_customer_created_date_typed": sale.get("Delivery.CustomerCreatedDateTyped"),
-                "delivery_customer_marketing_source": sale.get("Delivery.CustomerMarketingSource"),
-                "delivery_customer_opinion_comment": sale.get("Delivery.CustomerOpinionComment"),
-                "delivery_delivery_comment": sale.get("Delivery.DeliveryComment"),
-                "delivery_cancel_cause": sale.get("Delivery.CancelCause"),
-                "delivery_cancel_comment": sale.get("Delivery.CancelComment"),
-                "delivery_marketing_source": sale.get("Delivery.MarketingSource"),
-                "delivery_external_cartography_id": sale.get("Delivery.ExternalCartographyId"),
-                "delivery_source_key": sale.get("Delivery.SourceKey"),
-                "delivery_ecs_service": sale.get("Delivery.EcsService"),
-                
-                # Оценки доставки
-                "delivery_avg_mark": _extract_numeric_value(sale.get("Delivery.AvgMark")),
-                "delivery_avg_food_mark": _extract_numeric_value(sale.get("Delivery.AvgFoodMark")),
-                "delivery_avg_courier_mark": _extract_numeric_value(sale.get("Delivery.AvgCourierMark")),
-                "delivery_avg_operator_mark": _extract_numeric_value(sale.get("Delivery.AvgOperatorMark")),
-                "delivery_aggregated_avg_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgMark")),
-                "delivery_aggregated_avg_food_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgFoodMark")),
-                "delivery_aggregated_avg_courier_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgCourierMark")),
-                "delivery_aggregated_avg_operator_mark": _extract_numeric_value(sale.get("Delivery.AggregatedAvgOperatorMark")),
-                
+                "delivery_id": None,
+                "delivery_number": None,
+                "delivery_address": None,
+                "delivery_city": None,
+                "delivery_street": None,
+                "delivery_index": None,
+                "delivery_region": None,
+                "delivery_zone": None,
+                "delivery_phone": None,
+                "delivery_email": None,
+                "delivery_courier": None,
+                "delivery_courier_id": None,
+                "delivery_operator": None,
+                "delivery_operator_id": None,
+                "delivery_service_type": None,
+                "delivery_expected_time": None,
+                "delivery_actual_time": None,
+                "delivery_close_time": None,
+                "delivery_cooking_finish_time": None,
+                "delivery_send_time": None,
+                "delivery_bill_time": None,
+                "delivery_print_time": None,
+                "delivery_delay": None,
+                "delivery_delay_avg": None,
+                "delivery_way_duration": None,
+                "delivery_way_duration_avg": None,
+                "delivery_way_duration_sum": None,
+                "delivery_cooking_to_send_duration": None,
+                "delivery_diff_between_actual_delivery_time_and_predicted_delivery_time": None,
+                "delivery_predicted_cooking_complete_time": None,
+                "delivery_predicted_delivery_time": None,
+                "delivery_customer_name": None,
+                "delivery_customer_phone": None,
+                "delivery_customer_email": None,
+                "delivery_customer_card_number": None,
+                "delivery_customer_card_type": None,
+                "delivery_customer_comment": None,
+                "delivery_customer_created_date_typed": None,
+                "delivery_customer_marketing_source": None,
+                "delivery_customer_opinion_comment": None,
+                "delivery_delivery_comment": None,
+                "delivery_cancel_cause": None,
+                "delivery_cancel_comment": None,
+                "delivery_marketing_source": None,
+                "delivery_external_cartography_id": None,
+                "delivery_source_key": None,
+                "delivery_ecs_service": None,
+
+                # Оценки доставки (убраны из OLAP)
+                "delivery_avg_mark": None,
+                "delivery_avg_food_mark": None,
+                "delivery_avg_courier_mark": None,
+                "delivery_avg_operator_mark": None,
+                "delivery_aggregated_avg_mark": None,
+                "delivery_aggregated_avg_food_mark": None,
+                "delivery_aggregated_avg_courier_mark": None,
+                "delivery_aggregated_avg_operator_mark": None,
+
                 # Скидки заказа
                 "order_discount_guest_card": sale.get("OrderDiscount.GuestCard"),
                 "order_discount_type": sale.get("OrderDiscount.Type"),
                 "order_discount_type_ids": sale.get("OrderDiscount.Type.IDs"),
-                
+
                 # Наценки заказа
                 "order_increase_type": sale.get("OrderIncrease.Type"),
                 "order_increase_type_ids": sale.get("OrderIncrease.Type.IDs"),
-                
+
                 # Событие продажи товара
                 "item_sale_event_discount_type": sale.get("ItemSaleEventDiscountType"),
                 "item_sale_event_discount_type_combo_amount": sale.get("ItemSaleEventDiscountType.ComboAmount"),
                 "item_sale_event_discount_type_discount_amount": sale.get("ItemSaleEventDiscountType.DiscountAmount"),
-                
+
                 # Платежная транзакция
                 "payment_transaction_id": sale.get("PaymentTransaction.Id"),
                 "payment_transaction_ids": sale.get("PaymentTransaction.Ids"),
-                
+
                 # Тип операции
                 "operation_type": sale.get("OperationType"),
-                
+
                 # Контрагент
                 "counteragent_name": sale.get("Counteragent.Name"),
-                
-                # Кредитный пользователь
-                "credit_user": sale.get("CreditUser"),
-                "credit_user_company": sale.get("CreditUser.Company"),
-                
-                # Ценовая категория
-                "price_category": sale.get("PriceCategory"),
-                "price_category_card": sale.get("PriceCategoryCard"),
-                "price_category_discount_card_owner": sale.get("PriceCategoryDiscountCardOwner"),
-                "price_category_user_card_owner": sale.get("PriceCategoryUserCardOwner"),
+
+                # Кредитный пользователь (убран из OLAP)
+                "credit_user": None,
+                "credit_user_company": None,
+
+                # Ценовая категория (убрана из OLAP)
+                "price_category": None,
+                "price_category_card": None,
+                "price_category_discount_card_owner": None,
+                "price_category_user_card_owner": None,
                 
                 # Стоимость продукта
                 "product_cost_base_mark_up": sale.get("ProductCostBase.MarkUp"),
@@ -1211,9 +1286,9 @@ class IikoParser:
                 # Стимулирующая сумма
                 "incentive_sum_base_sum": _extract_numeric_value(sale.get("IncentiveSumBase.Sum")),
                 
-                # Процент от итога
-                "percent_of_summary_by_col": _extract_numeric_value(sale.get("PercentOfSummary.ByCol")),
-                "percent_of_summary_by_row": _extract_numeric_value(sale.get("PercentOfSummary.ByRow")),
+                # Процент от итога (убраны из OLAP)
+                "percent_of_summary_by_col": None,
+                "percent_of_summary_by_row": None,
                 
                 # Продано с блюдом
                 "sold_with_dish": sale.get("SoldWithDish"),
@@ -1263,13 +1338,13 @@ class IikoParser:
                 "dish_service_print_time_max": _extract_numeric_value(sale.get("DishServicePrintTime.Max")),
                 "dish_service_print_time_open_to_last_print_duration": _extract_numeric_value(sale.get("DishServicePrintTime.OpenToLastPrintDuration")),
                 
-                # Временные группировки по минутам
-                "open_time_minutes15": sale.get("OpenTime.Minutes15"),
-                "close_time_minutes15": sale.get("CloseTime.Minutes15"),
-                
-                # Внешние данные
-                "public_external_data": sale.get("PublicExternalData"),
-                "public_external_data_xml": sale.get("PublicExternalData.Xml")
+                # Временные группировки по минутам (убраны из OLAP)
+                "open_time_minutes15": None,
+                "close_time_minutes15": None,
+
+                # Внешние данные (убраны из OLAP)
+                "public_external_data": None,
+                "public_external_data_xml": None
             }
             parsed_sales.append(parsed_sale)
         
@@ -1339,6 +1414,354 @@ class IikoParser:
         
         logger.info(f"Парсинг окладов: {len(parsed_salaries)} записей")
         return parsed_salaries
+
+    @staticmethod
+    def parse_shifts(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """
+        Парсинг данных о сменах сотрудников из iiko API
+        
+        Args:
+            data: Список словарей с данными о сменах из iiko API
+        
+        Returns:
+            Список нормализованных данных о сменах
+        """
+        parsed_shifts = []
+        
+        if not data:
+            logger.warning("parse_shifts: получен пустой список данных")
+            return parsed_shifts
+        
+        for shift in data:
+            # Проверяем, что shift это словарь
+            if not isinstance(shift, dict):
+                logger.warning(f"Смена должна быть словарем в parse_shifts, получен тип: {type(shift)}, пропускаем")
+                continue
+            
+            # Парсим даты
+            start_time = None
+            end_time = None
+            
+            if shift.get("start_time"):
+                try:
+                    start_time = datetime.fromisoformat(shift["start_time"].replace("Z", "+00:00"))
+                except:
+                    try:
+                        start_time = datetime.strptime(shift["start_time"], "%Y-%m-%d %H:%M:%S")
+                    except:
+                        logger.warning(f"Не удалось распарсить start_time: {shift.get('start_time')}")
+            
+            if shift.get("end_time"):
+                try:
+                    end_time = datetime.fromisoformat(shift["end_time"].replace("Z", "+00:00"))
+                except:
+                    try:
+                        end_time = datetime.strptime(shift["end_time"], "%Y-%m-%d %H:%M:%S")
+                    except:
+                        logger.warning(f"Не удалось распарсить end_time: {shift.get('end_time')}")
+            
+            parsed_shift = {
+                "iiko_id": shift.get("iiko_id") or shift.get("id"),
+                "employee_iiko_id": shift.get("employee_id") or shift.get("employeeId"),
+                "start_time": start_time,
+                "end_time": end_time,
+                "attendance_type_iiko_id": shift.get("attendance_type_id") or shift.get("attendanceTypeId"),
+                "user_iiko_id": shift.get("user_id") or shift.get("userId")
+            }
+            parsed_shifts.append(parsed_shift)
+        
+        logger.info(f"Парсинг смен: {len(parsed_shifts)} записей")
+        return parsed_shifts
+
+
+    @staticmethod
+    def parse_writeoff_documents(data: Dict[Any, Any]) -> List[Dict[Any, Any]]:
+        """Парсинг JSON актов списания"""
+        if not data or not isinstance(data, dict):
+            return []
+        
+        response = data.get("response", [])
+        if not response:
+            return []
+        
+        parsed_documents = []
+        for doc in response:
+            parsed_doc = {
+                "iiko_id": doc.get("id"),
+                "document_number": doc.get("documentNumber"),
+                "date_incoming": doc.get("dateIncoming"),
+                "status": doc.get("status"),
+                "store_id": doc.get("storeId"),
+                "account_id": doc.get("accountId"),
+                "items": []
+            }
+            
+            # Парсим позиции документа
+            items = doc.get("items", [])
+            for item in items:
+                parsed_item = {
+                    "num": item.get("num"),
+                    "product_id": item.get("productId"),
+                    "product_size_id": item.get("productSizeId"),
+                    "amount_factor": item.get("amountFactor"),
+                    "amount": item.get("amount"),
+                    "measure_unit_id": item.get("measureUnitId"),
+                    "container_id": item.get("containerId"),
+                    "cost": item.get("cost")
+                }
+                parsed_doc["items"].append(parsed_item)
+            
+            parsed_documents.append(parsed_doc)
+        
+        logger.info(f"Парсинг актов списания: {len(parsed_documents)} документов")
+        return parsed_documents
+
+    @staticmethod
+    def parse_incoming_invoices(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг приходных накладных (уже распарсенных из XML)"""
+        if not data:
+            return []
+        
+        parsed_invoices = []
+        for invoice in data:
+            parsed_invoice = {
+                "iiko_id": invoice.get("id"),
+                "conception": invoice.get("conception"),
+                "conception_code": invoice.get("conception_code"),
+                "comment": invoice.get("comment"),
+                "document_number": invoice.get("document_number"),
+                "date_incoming": invoice.get("date_incoming"),
+                "invoice": invoice.get("invoice"),
+                "default_store": invoice.get("default_store"),
+                "supplier": invoice.get("supplier"),
+                "due_date": invoice.get("due_date"),
+                "incoming_date": invoice.get("incoming_date"),
+                "use_default_document_time": invoice.get("use_default_document_time", False),
+                "status": invoice.get("status"),
+                "incoming_document_number": invoice.get("incoming_document_number"),
+                "employee_pass_to_account": invoice.get("employee_pass_to_account"),
+                "transport_invoice_number": invoice.get("transport_invoice_number"),
+                "linked_outgoing_invoice_id": invoice.get("linked_outgoing_invoice_id"),
+                "distribution_algorithm": invoice.get("distribution_algorithm"),
+                "organization_id": invoice.get("organization_id"),  # Добавляем organization_id
+                "items": []
+            }
+            
+            # Парсим позиции
+            items = invoice.get("items", [])
+            for item in items:
+                parsed_item = {
+                    "is_additional_expense": item.get("is_additional_expense", False),
+                    "amount": item.get("amount"),
+                    "supplier_product": item.get("supplier_product"),
+                    "supplier_product_article": item.get("supplier_product_article"),
+                    "product": item.get("product"),
+                    "product_article": item.get("product_article"),
+                    "producer": item.get("producer"),
+                    "num": item.get("num"),
+                    "container_id": item.get("container_id"),
+                    "amount_unit": item.get("amount_unit"),
+                    "actual_unit_weight": item.get("actual_unit_weight"),
+                    "sum": item.get("sum"),
+                    "discount_sum": item.get("discount_sum"),
+                    "vat_percent": item.get("vat_percent"),
+                    "vat_sum": item.get("vat_sum"),
+                    "price_unit": item.get("price_unit"),
+                    "price": item.get("price"),
+                    "price_without_vat": item.get("price_without_vat"),
+                    "code": item.get("code"),
+                    "store": item.get("store"),
+                    "customs_declaration_number": item.get("customs_declaration_number"),
+                    "actual_amount": item.get("actual_amount")
+                }
+                parsed_invoice["items"].append(parsed_item)
+            
+            parsed_invoices.append(parsed_invoice)
+        
+        logger.info(f"Парсинг приходных накладных: {len(parsed_invoices)} документов")
+        return parsed_invoices
+
+    @staticmethod
+    def parse_outgoing_invoices(data: List[Dict[Any, Any]]) -> List[Dict[Any, Any]]:
+        """Парсинг расходных накладных (уже распарсенных из XML)"""
+        if not data:
+            return []
+        
+        parsed_invoices = []
+        for invoice in data:
+            parsed_invoice = {
+                "iiko_id": invoice.get("id"),
+                "document_number": invoice.get("document_number"),
+                "date_incoming": invoice.get("date_incoming"),
+                "use_default_document_time": invoice.get("use_default_document_time", False),
+                "status": invoice.get("status"),
+                "account_to_code": invoice.get("account_to_code"),
+                "revenue_account_code": invoice.get("revenue_account_code"),
+                "default_store_id": invoice.get("default_store_id"),
+                "default_store_code": invoice.get("default_store_code"),
+                "counteragent_id": invoice.get("counteragent_id"),
+                "counteragent_code": invoice.get("counteragent_code"),
+                "conception_id": invoice.get("conception_id"),
+                "conception_code": invoice.get("conception_code"),
+                "comment": invoice.get("comment"),
+                "linked_outgoing_invoice_id": invoice.get("linked_outgoing_invoice_id"),
+                "items": []
+            }
+            
+            # Парсим позиции
+            items = invoice.get("items", [])
+            for item in items:
+                parsed_item = {
+                    "product_id": item.get("product_id"),
+                    "product_article": item.get("product_article"),
+                    "store_id": item.get("store_id"),
+                    "store_code": item.get("store_code"),
+                    "container_id": item.get("container_id"),
+                    "container_code": item.get("container_code"),
+                    "price": item.get("price"),
+                    "price_without_vat": item.get("price_without_vat"),
+                    "amount": item.get("amount"),
+                    "sum": item.get("sum"),
+                    "discount_sum": item.get("discount_sum"),
+                    "vat_percent": item.get("vat_percent"),
+                    "vat_sum": item.get("vat_sum")
+                }
+                parsed_invoice["items"].append(parsed_item)
+            
+            parsed_invoices.append(parsed_invoice)
+        
+        logger.info(f"Парсинг расходных накладных: {len(parsed_invoices)} документов")
+        return parsed_invoices
+
+    # ---- Helpers для payment_types из Server API ----
+    JUR_PERSON_NAME_HINTS = ['ИП Шаяхметов', 'ИП Амиржан', 'ИП Акжан']
+    NON_PAYABLE_PATTERNS = [
+        'перемещени', 'бракераж', 'дегустаци', 'маркетинг', 'стафф',
+        'представительск', 'отработка', 'акт приготовлен', 'под зп',
+        'сертификат', 'счет на оплату',
+    ]
+
+    @staticmethod
+    def _guess_payment_type_kind(name: str) -> str:
+        """Эвристика: по имени → paymentTypeKind. Server API его не отдаёт,
+        а оно нужно для оплаты через Cloud /api/1/order/change_payments."""
+        n = (name or '').lower()
+        if any(x in n for x in ['каспий', 'каспи', 'kaspi', 'бцк', 'халык', 'банк']):
+            return 'Card'
+        if 'сертификат' in n:
+            return 'External'
+        if 'бонус' in n or 'plazius' in n:
+            return 'IikoCard'
+        return 'Card'
+
+    @staticmethod
+    def _guess_is_payable(name: str) -> bool:
+        """True если вид оплаты реально проводится на кассе.
+        False для служебных операций бэкофиса."""
+        n = (name or '').lower()
+        return not any(p in n for p in IikoParser.NON_PAYABLE_PATTERNS)
+
+    @staticmethod
+    def _extract_jur_person_hint(name: str) -> Optional[str]:
+        """Если в имени вида есть ИП Шаяхметов/Амиржан/Акжан — возвращаем эту строку.
+        Иначе None — значит вид доступен для всех орг."""
+        for hint in IikoParser.JUR_PERSON_NAME_HINTS:
+            if hint.lower() in (name or '').lower():
+                return hint
+        return None
+
+    @staticmethod
+    def parse_server_payment_types(data: List[Dict]) -> List[Dict]:
+        """Парсинг видов оплат из Server API entities/list?rootType=PaymentType.
+
+        Возвращает структуру, совместимую с parse_payment_types (Cloud), но с
+        полями, достроенными по эвристикам:
+          - payment_type_kind: Card/External/IikoCard
+          - is_payable: True/False
+          - source: 'server'
+          - organization_iiko_ids: NULL (рассчитывается в sync через jur_person)
+          - jur_person_hint: внутренний маркер для sync
+        """
+        if not data or not isinstance(data, list):
+            return []
+        parsed = []
+        for pt in data:
+            iiko_id = pt.get('id')
+            if not iiko_id:
+                continue
+            name = pt.get('name') or ''
+            parsed.append({
+                'iiko_id': iiko_id,
+                'code': pt.get('code') or None,
+                'name': name,
+                'comment': None,
+                'combinable': False,
+                'external_revision': None,
+                'is_deleted': bool(pt.get('deleted', False)),
+                'print_cheque': False,
+                'payment_processing_type': None,
+                'payment_type_kind': IikoParser._guess_payment_type_kind(name),
+                'is_payable': IikoParser._guess_is_payable(name),
+                'source': 'server',
+                'organization_iiko_ids': None,
+                'jur_person_hint': IikoParser._extract_jur_person_hint(name),
+            })
+        logger.info(f"Парсинг Server payment_types: {len(parsed)} записей")
+        return parsed
+
+    @staticmethod
+    def parse_payment_types(data: Dict) -> List[Dict]:
+        """Парсинг видов оплат из Cloud API"""
+        payment_types = data.get("paymentTypes", [])
+        if not payment_types:
+            return []
+
+        # Объединяем виды оплат по iiko_id, т.к. один и тот же вид оплаты
+        # может приходить от разных организаций
+        by_iiko_id = {}
+        for pt in payment_types:
+            iiko_id = pt.get("id")
+            if not iiko_id:
+                continue
+
+            org_ids = []
+            for tg in pt.get("terminalGroups", []):
+                org_id = tg.get("organizationId")
+                if org_id and org_id not in org_ids:
+                    org_ids.append(org_id)
+
+            if iiko_id in by_iiko_id:
+                # Добавляем organization_iiko_ids из другой организации
+                existing_org_ids = by_iiko_id[iiko_id]["organization_iiko_ids"]
+                for oid in org_ids:
+                    if oid not in existing_org_ids:
+                        existing_org_ids.append(oid)
+                # Обновляем external_revision если новее
+                new_rev = pt.get("externalRevision") or 0
+                old_rev = by_iiko_id[iiko_id]["external_revision"] or 0
+                if new_rev > old_rev:
+                    by_iiko_id[iiko_id]["external_revision"] = new_rev
+            else:
+                by_iiko_id[iiko_id] = {
+                    "iiko_id": iiko_id,
+                    "code": pt.get("code"),
+                    "name": pt.get("name"),
+                    "comment": pt.get("comment"),
+                    "combinable": pt.get("combinable", False),
+                    "external_revision": pt.get("externalRevision"),
+                    "is_deleted": pt.get("isDeleted", False),
+                    "print_cheque": pt.get("printCheque", False),
+                    "payment_processing_type": pt.get("paymentProcessingType"),
+                    "payment_type_kind": pt.get("paymentTypeKind"),
+                    "organization_iiko_ids": org_ids,
+                    # Cloud отдаёт только реально проводимые на кассе виды
+                    "is_payable": True,
+                    "source": "cloud",
+                }
+
+        parsed = list(by_iiko_id.values())
+        logger.info(f"Парсинг видов оплат: {len(parsed)} записей (из {len(payment_types)} до дедупликации)")
+        return parsed
 
 
 # Глобальный экземпляр парсера

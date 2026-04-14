@@ -12,3 +12,8 @@ class LoginResponse(BaseModel):
     access_token: str | None = None
     token_type: str | None = None
     role: str | None = None
+    name: str | None = None
+
+class ChangePasswordRequest(BaseModel):
+    employee_id: int
+    new_password: str

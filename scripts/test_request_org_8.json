@@ -1,0 +1,18 @@
+{
+  "document_type": "INCOMING_INVOICE",
+  "date": "15.01.2025",
+  "date_incoming": "15.01.2025",
+  "organization_id": 8,
+  "store_id": 1,
+  "invoice": "TEST-INV-001",
+  "comment": "Тестовая приходная накладная для организации Премьера",
+  "items": [
+    {
+      "item_id": 3021,
+      "quantity": 10.0,
+      "price": 100.0,
+      "amount": 1000.0
+    }
+  ]
+}
+

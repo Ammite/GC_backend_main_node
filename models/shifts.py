@@ -11,7 +11,7 @@ class Shift(Base):
     iiko_id = Column(String(50), unique=True, nullable=True)
 
     start_time = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    end_time = Column(TIMESTAMP, nullable=False)
+    end_time = Column(TIMESTAMP, nullable=True)
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

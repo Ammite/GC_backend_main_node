@@ -1,0 +1,96 @@
+{
+  "timestamp": "2025-12-14T20:07:41.159815",
+  "base_url": "http://localhost:8008",
+  "results": [
+    {
+      "endpoint": "analytics",
+      "path": "/analytics",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 16.096,
+      "min_time_seconds": 0.673,
+      "max_time_seconds": 46.812,
+      "errors": [],
+      "all_times": [
+        46.812,
+        0.805,
+        0.673
+      ]
+    },
+    {
+      "endpoint": "reports_orders",
+      "path": "/reports/orders",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 2.419,
+      "min_time_seconds": 2.386,
+      "max_time_seconds": 2.472,
+      "errors": [],
+      "all_times": [
+        2.472,
+        2.386,
+        2.398
+      ]
+    },
+    {
+      "endpoint": "reports_moneyflow",
+      "path": "/reports/moneyflow",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 9.714,
+      "min_time_seconds": 9.397,
+      "max_time_seconds": 9.875,
+      "errors": [],
+      "all_times": [
+        9.871,
+        9.875,
+        9.397
+      ]
+    },
+    {
+      "endpoint": "reports_profit_loss",
+      "path": "/reports/profit-loss",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 0.02,
+      "min_time_seconds": 0.015,
+      "max_time_seconds": 0.025,
+      "errors": [],
+      "all_times": [
+        0.025,
+        0.015,
+        0.021
+      ]
+    },
+    {
+      "endpoint": "reports_expenses",
+      "path": "/reports/expenses",
+      "test_period": "day_02_12_2025",
+      "date": "02.12.2025",
+      "period": "day",
+      "iterations": 3,
+      "successful_iterations": 3,
+      "avg_time_seconds": 0.014,
+      "min_time_seconds": 0.011,
+      "max_time_seconds": 0.021,
+      "errors": [],
+      "all_times": [
+        0.021,
+        0.011,
+        0.011
+      ]
+    }
+  ]
+}

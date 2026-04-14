@@ -17,17 +17,25 @@ def get_menu(
     organization_id: Optional[int] = Query(default=None),
     category_id: Optional[int] = Query(default=None),
     name: Optional[str] = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=1000),
+    limit: int = Query(default=100, ge=0, le=10000, description="Количество записей. 0 — вернуть все записи без ограничения."),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
+    """
+    Получить список позиций меню.
+
+    organization_id и category_id — внутренние ID (из БД).
+    Возвращает id, name, price, description, image, category для каждой позиции.
+
+    **limit=0** — вернуть все записи без ограничения.
+    """
     items: List[ItemResponse] = get_all_menu_items(
         db=db,
         organization_id=organization_id,
         category_id=category_id,
         name=name,
-        limit=limit,
+        limit=limit if limit > 0 else None,
         offset=offset,
     )
     return {

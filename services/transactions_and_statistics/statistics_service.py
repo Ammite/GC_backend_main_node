@@ -3,7 +3,7 @@
 Содержит переиспользуемые функции для аналитики и отчетов
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, distinct, case
 from typing import Optional, List, Tuple, Dict
 from datetime import datetime, timedelta
 from models.d_order import DOrder
@@ -15,6 +15,12 @@ from models.employees import Employees
 from models.account import Account
 from models.transaction import Transaction
 from schemas.analytics import ChangeMetric
+from utils.file_cache import file_cached
+from utils.performance_logger import log_execution_time
+from services.transactions_and_statistics.daily_aggregates_service import (
+    get_daily_metric_sum,
+    get_daily_metric_by_subkey,
+)
 
 import logging
 logger = logging.getLogger(__name__)
@@ -91,6 +97,33 @@ def get_period_dates(
     return start_date, end_date, previous_start, previous_end
 
 
+def resolve_date_range(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    date: Optional[str] = None,
+    period: Optional[str] = "day",
+) -> Tuple[datetime, datetime, datetime, datetime]:
+    """
+    Универсальный резолвер диапазона дат.
+
+    Приоритет: если переданы date_from/date_to (DD.MM.YYYY) — используются они.
+    Иначе — старая логика date + period.
+
+    Returns:
+        (start_date, end_date, previous_start, previous_end)
+    """
+    if date_from and date_to:
+        start = datetime.strptime(date_from, "%d.%m.%Y").replace(hour=0, minute=0, second=0, microsecond=0)
+        end = datetime.strptime(date_to, "%d.%m.%Y").replace(hour=23, minute=59, second=59, microsecond=999999)
+        delta = end - start
+        prev_end = start
+        prev_start = start - delta - timedelta(seconds=1)
+        prev_start = prev_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        return start, end, prev_start, prev_end
+    target_date = parse_date(date)
+    return get_period_dates(target_date, period)
+
+
 # ==================== РАБОТА С ЗАКАЗАМИ ====================
 
 def get_orders_for_period(
@@ -161,6 +194,7 @@ def calculate_average_check(orders: List[DOrder], use_discount: bool = False) ->
 
 # ==================== РАБОТА С SALES ====================
 
+@file_cached(ttl_seconds=600, key_prefix="returns")
 def get_returns_sum_from_sales(
     db: Session,
     start_date: datetime,
@@ -180,21 +214,17 @@ def get_returns_sum_from_sales(
     Returns:
         Сумма возвратов
     """
-    sales_query = db.query(Sales).filter(
-        Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF',
-        Sales.cashier != 'Удаление позиций',
-        Sales.order_deleted != 'DELETED',
-        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
-        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
+    # Используем предагрегированную дневную метрику returns_sum
+    return get_daily_metric_sum(
+        db,
+        metric_key="returns_sum",
+        start_date=start_date,
+        end_date=end_date,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        sales_query = sales_query.filter(Sales.organization_id == organization_id)
-    
-    sales = sales_query.all()
-    return round(sum(float(sale.dish_sum_int or 0) for sale in sales), 2)
 
 
+@file_cached(ttl_seconds=600, key_prefix="cost_goods")
 def get_cost_of_goods_from_sales(
     db: Session,
     start_date: datetime,
@@ -214,62 +244,34 @@ def get_cost_of_goods_from_sales(
     Returns:
         Словарь с себестоимостью по категориям: {"category": amount, "total": amount}
     """
-    # Получаем все аккаунты, у которых account_parent_id равен указанному значению
-    parent_account_id = '2bed7fff-c2b9-4ca4-a5d4-bfca251f454d'
-    accounts = db.query(Account).filter(
-        and_(
-            Account.account_parent_id == parent_account_id,
-            Account.deleted == False
-        )
-    ).all()
-    
-    # Извлекаем iiko_id из аккаунтов (это account_id для транзакций)
-    account_ids = [account.iiko_id for account in accounts if account.iiko_id]
-    
-    if not account_ids:
-        logger.warning(f"Не найдено аккаунтов с account_parent_id = {parent_account_id}")
-        return {"total": 0.0}
-    
-    # Приводим к датам для сравнения с date_typed
-    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
-    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
-    
-    # Получаем транзакции по этим account_id, группируем по категориям
-    query = db.query(
-        Transaction.account_hierarchy_second,
-        func.sum(func.coalesce(Transaction.sum_resigned, 0)).label('total_cost')
-    ).filter(
-        and_(
-            Transaction.account_id.in_(account_ids),
-            Transaction.date_typed >= start_date_only,
-            Transaction.date_typed <= end_date_only,
-            Transaction.is_active == True,
-            Transaction.sum_resigned.isnot(None)
-        )
+    # Используем предагрегированные дневные метрики cost_goods_category и cost_goods_total
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+
+    cost_by_category = get_daily_metric_by_subkey(
+        db,
+        metric_key="cost_goods_category",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        query = query.filter(Transaction.organization_id == organization_id)
-    
-    # Группируем по категории
-    results = query.group_by(Transaction.account_hierarchy_second).all()
-    
-    # Формируем словарь с категориями
-    cost_by_category = {}
-    total_cost = 0.0
-    
-    for row in results:
-        category = row.account_hierarchy_second or "Без категории"
-        cost = round(float(row.total_cost or 0), 2)
-        cost_by_category[category] = cost
-        total_cost += cost
-    
-    # Добавляем общую сумму
-    cost_by_category["total"] = round(total_cost, 2)
-    
+    total_cost = get_daily_metric_sum(
+        db,
+        metric_key="cost_goods_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+
+    if not cost_by_category:
+        return {"total": total_cost}
+
+    cost_by_category["total"] = total_cost
     return cost_by_category
 
 
+@file_cached(ttl_seconds=600, key_prefix="writeoffs_sum")
+@log_execution_time
 def get_writeoffs_sum_from_sales(
     db: Session,
     start_date: datetime,
@@ -289,20 +291,18 @@ def get_writeoffs_sum_from_sales(
     Returns:
         Сумма списаний
     """
-    sales_query = db.query(Sales).filter(
-        Sales.deleted_with_writeoff == 'DELETED_WITH_WRITEOFF',
-        Sales.cashier != 'Удаление позиций',
-        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
-        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
+    logger.debug("[PERF] get_writeoffs_sum_from_sales -> calling get_daily_metric_sum")
+    # Используем предагрегированную дневную метрику writeoffs_sum
+    return get_daily_metric_sum(
+        db,
+        metric_key="writeoffs_sum",
+        start_date=start_date,
+        end_date=end_date,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        sales_query = sales_query.filter(Sales.organization_id == organization_id)
-    
-    sales = sales_query.all()
-    return round(sum(float(sale.dish_discount_sum_int or 0) for sale in sales), 2)
 
 
+@log_execution_time
 def get_writeoffs_details_from_sales(
     db: Session,
     start_date: datetime,
@@ -321,6 +321,7 @@ def get_writeoffs_details_from_sales(
     Returns:
         Список кортежей (название блюда, количество, сумма, причина)
     """
+    logger.debug("[PERF] get_writeoffs_details_from_sales -> querying Sales table")
     sales_query = db.query(Sales).filter(
         Sales.deleted_with_writeoff == 'DELETED_WITH_WRITEOFF',
         Sales.cashier != 'Удаление позиций',
@@ -339,7 +340,7 @@ def get_writeoffs_details_from_sales(
         dish_name = sale.dish_name or "Неизвестное блюдо"
         amount = float(sale.dish_discount_sum_int or 0)
         quantity = int(sale.dish_amount_int or 0)
-        reason = sale.deletion_method_type or "Списание"
+        reason = sale.writeoff_reason or "Списание"
         
         if dish_name not in writeoffs_dict:
             writeoffs_dict[dish_name] = {
@@ -358,6 +359,7 @@ def get_writeoffs_details_from_sales(
     ]
 
 
+@file_cached(ttl_seconds=600, key_prefix="factory_revenue")
 def get_factory_revenue(
     db: Session,
     start_date: datetime,
@@ -376,31 +378,19 @@ def get_factory_revenue(
     Returns:
         Сумма выручки с фабрики
     """
-    factory_account_id = '09e1ead4-53d4-48ac-8b7c-89dea7bf145b'
-    
-    # Приводим к датам для сравнения с date_typed
-    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
-    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
-    
-    query = db.query(
-        func.sum(Transaction.sum_resigned)
-    ).filter(
-        and_(
-            Transaction.account_id == factory_account_id,
-            Transaction.date_typed >= start_date_only,
-            Transaction.date_typed <= end_date_only,
-            Transaction.sum_resigned != 0,
-            Transaction.is_active == True
-        )
+    # Используем предагрегированную дневную метрику factory_revenue
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+    return get_daily_metric_sum(
+        db,
+        metric_key="factory_revenue",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        query = query.filter(Transaction.organization_id == organization_id)
-    
-    result = query.scalar()
-    return round(float(result or 0), 2)
 
 
+@file_cached(ttl_seconds=600, key_prefix="revenue_category")
 def get_revenue_by_category(
     db: Session,
     start_date: datetime,
@@ -423,201 +413,86 @@ def get_revenue_by_category(
     Returns:
         Словарь с доходами по категориям: {"Кухня": amount, "Бар": amount, "Наценка": amount, "Фабрика": amount, "Название счета OTHER_INCOME": amount, "total": amount}
     """
-    # Базовый фильтр для всех запросов
-    base_filter = and_(
-        Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
-        Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
-        Sales.cashier != 'Удаление позиций',
-        Sales.order_deleted != 'DELETED'
-    )
-    
-    # Выручка Кухня (с учетом скидок и наценок)
-    kitchen_query = db.query(
-        func.sum(Sales.dish_sum_int).label('sum_base'),
-        func.sum(Sales.discount_sum).label('sum_discount'),
-        func.sum(Sales.increase_sum).label('sum_increase')
-    ).filter(
-        and_(
-            base_filter,
-            func.lower(Sales.cooking_place_type).contains('кухня'),
-            Sales.dish_sum_int.isnot(None)
-        )
-    )
-    
-    if organization_id:
-        kitchen_query = kitchen_query.filter(Sales.organization_id == organization_id)
-    
-    kitchen_data = kitchen_query.first()
-    kitchen_base = round(float(kitchen_data.sum_base or 0), 2)
-    kitchen_discount = round(float(kitchen_data.sum_discount or 0), 2)
-    kitchen_increase = round(float(kitchen_data.sum_increase or 0), 2)
-    kitchen_revenue = round(kitchen_base - kitchen_discount + kitchen_increase, 2)
-    
-    # Выручка Бар (не Кухня, с учетом скидок и наценок)
-    bar_query = db.query(
-        func.sum(Sales.dish_sum_int).label('sum_base'),
-        func.sum(Sales.discount_sum).label('sum_discount'),
-        func.sum(Sales.increase_sum).label('sum_increase')
-    ).filter(
-        and_(
-            base_filter,
-            func.lower(Sales.cooking_place_type).not_like('%кухня%'),
-            Sales.cooking_place_type.isnot(None),
-            Sales.dish_sum_int.isnot(None)
-        )
-    )
-    
-    if organization_id:
-        bar_query = bar_query.filter(Sales.organization_id == organization_id)
-    
-    bar_data = bar_query.first()
-    bar_base = round(float(bar_data.sum_base or 0), 2)
-    bar_discount = round(float(bar_data.sum_discount or 0), 2)
-    bar_increase = round(float(bar_data.sum_increase or 0), 2)
-    bar_revenue = round(bar_base - bar_discount + bar_increase, 2)
-    
-    # Прочие (без категории, с учетом скидок и наценок)
-    other_query = db.query(
-        func.sum(Sales.dish_sum_int).label('sum_base'),
-        func.sum(Sales.discount_sum).label('sum_discount'),
-        func.sum(Sales.increase_sum).label('sum_increase')
-    ).filter(
-        and_(
-            base_filter,
-            Sales.cooking_place_type.is_(None),
-            Sales.dish_sum_int.isnot(None)
-        )
-    )
-    
-    if organization_id:
-        other_query = other_query.filter(Sales.organization_id == organization_id)
-    
-    other_data = other_query.first()
+    # Используем предагрегированные дневные метрики по выручке
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
 
-    overall_query = db.query(
-        func.sum(Sales.dish_discount_sum_int).label('sum_total'),
-    ).filter(
-        and_(
-            base_filter,
-        )
+    kitchen_base = get_daily_metric_sum(
+        db,
+        metric_key="revenue_kitchen",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    bar_base = get_daily_metric_sum(
+        db,
+        metric_key="revenue_bar",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    other_revenue = get_daily_metric_sum(
+        db,
+        metric_key="revenue_other",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    total_increase = get_daily_metric_sum(
+        db,
+        metric_key="revenue_increase_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    additional_revenue = get_daily_metric_sum(
+        db,
+        metric_key="revenue_additional",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    factory_revenue = get_daily_metric_sum(
+        db,
+        metric_key="factory_revenue",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    other_income_revenue = get_daily_metric_by_subkey(
+        db,
+        metric_key="revenue_other_income",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+    total_revenue = get_daily_metric_sum(
+        db,
+        metric_key="revenue_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
     )
 
-    if organization_id:
-        overall_query = overall_query.filter(Sales.organization_id == organization_id)
-
-    overall_data = overall_query.first()
-
-    overall_revenue = round(float(overall_data.sum_total or 0), 2)
-    
-
-    # Дополнительная выручка
-    # Суммируем отдельно sum_incoming и sum_outgoing
-    sum_incoming = db.query(func.sum(Transaction.sum_incoming)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
-        )
-    )
-    if organization_id:
-        sum_incoming = sum_incoming.filter(Transaction.organization_id == organization_id)
-    sum_incoming = float(sum_incoming.scalar() or 0)
-    
-    sum_outgoing = db.query(func.sum(Transaction.sum_outgoing)).filter(
-        and_(
-            Transaction.contr_account_name == 'Торговая выручка',
-            Transaction.date_typed >= start_date.date(),
-            Transaction.date_typed <= end_date.date()
-        )
-    )
-    if organization_id:
-        sum_outgoing = sum_outgoing.filter(Transaction.organization_id == organization_id)
-    sum_outgoing = float(sum_outgoing.scalar() or 0)
-    # Итогово = sum_incoming - sum_outgoing
-    additional_revenue = round(sum_incoming - sum_outgoing, 2)
-    
-    other_base = round(float(other_data.sum_base or 0), 2)
-    other_discount = round(float(other_data.sum_discount or 0), 2)
-    other_increase = round(float(other_data.sum_increase or 0), 2)
-    other_revenue = round(other_base - other_discount + other_increase, 2)
-    
-    # Общая сумма наценок (отдельная категория)
-    total_increase = round(kitchen_increase + bar_increase + other_increase, 2)
-    
-    # Выручка с фабрики
-    factory_revenue = get_factory_revenue(db, start_date, end_date, organization_id)
-    
-    # Дополнительные доходы (OTHER_INCOME)
-    # Получаем аккаунты с типом OTHER_INCOME
-    other_income_accounts = db.query(Account).filter(
-        and_(
-            Account.type == 'OTHER_INCOME',
-            Account.deleted == False
-        )
-    ).all()
-    
-    # Извлекаем iiko_id из аккаунтов
-    other_income_account_ids = [account.iiko_id for account in other_income_accounts if account.iiko_id]
-    
-    # Приводим к датам для сравнения с date_typed
-    start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
-    end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
-    
-    # Получаем транзакции по этим account_id, группируем по названию счета
-    other_income_revenue = {}
-    total_other_income = 0.0
-    
-    if other_income_account_ids:
-        other_income_query = db.query(
-            Transaction.account_name,
-            (func.sum(func.coalesce(Transaction.sum_incoming, 0)) - func.sum(func.coalesce(Transaction.sum_outgoing, 0))).label('total_income')
-        ).filter(
-            and_(
-                Transaction.account_id.in_(other_income_account_ids),
-                Transaction.date_typed >= start_date_only,
-                Transaction.date_typed <= end_date_only,
-                Transaction.is_active == True
-            )
-        )
-        
-        if organization_id:
-            other_income_query = other_income_query.filter(Transaction.organization_id == organization_id)
-        
-        # Группируем по названию счета
-        results = other_income_query.group_by(Transaction.account_name).all()
-        
-        for row in results:
-            account_name = row.account_name or "Прочие доходы"
-            income = round(float(row.total_income or 0), 2)
-            if income > 0:  # Добавляем только положительные доходы
-                other_income_revenue[account_name] = income
-                total_other_income += income
-            if income <= 0:
-                other_income_revenue[account_name] = abs(income)
-                total_other_income += abs(income)
-    
-    # Общая выручка (включая дополнительные доходы)
-    total_revenue = round(overall_revenue + additional_revenue + factory_revenue + total_other_income, 2)
-    
-    # Формируем итоговый словарь
     result = {
-        "Кухня": kitchen_base,
-        "Бар": bar_base,
-        "Прочее": other_revenue,
-        "Наценка (обслуживание)": total_increase,
-        "Дополнительная выручка": additional_revenue,
-        "Фабрика": factory_revenue,
+        "Кухня": round(kitchen_base, 2),
+        "Бар": round(bar_base, 2),
+        "Прочее": round(other_revenue, 2),
+        "Наценка (обслуживание)": round(total_increase, 2),
+        "Дополнительная выручка": round(additional_revenue, 2),
+        "Фабрика": round(factory_revenue, 2),
     }
-    
+
     # Добавляем дополнительные доходы как категории
-    result.update(other_income_revenue)
-    
-    # Добавляем общую сумму
-    result["total"] = total_revenue
-    
+    for account_name, income in other_income_revenue.items():
+        result[account_name] = round(float(income or 0), 2)
+
+    result["total"] = round(total_revenue, 2)
     return result
 
 
+@log_execution_time
+@file_cached(ttl_seconds=600, key_prefix="revenue_menu_payment")
 def get_revenue_by_menu_category_and_payment(
     db: Session,
     start_date: datetime,
@@ -636,6 +511,7 @@ def get_revenue_by_menu_category_and_payment(
     Returns:
         Список кортежей (категория, тип оплаты, сумма)
     """
+    logger.debug("[PERF] get_revenue_by_menu_category_and_payment -> querying Sales table")
     query = db.query(
         Sales.dish_category,
         Sales.card_type_name,
@@ -670,6 +546,8 @@ def get_revenue_by_menu_category_and_payment(
     ]
 
 
+@log_execution_time
+@file_cached(ttl_seconds=600, key_prefix="bank_commission")
 def get_bank_commission_total(
     db: Session,
     start_date: datetime,
@@ -689,35 +567,26 @@ def get_bank_commission_total(
         Сумма комиссий банка
     """
     import logging
+
     logger = logging.getLogger(__name__)
-    
-    logger.info(f"🔍 get_bank_commission_total called with:")
+
+    logger.info("🔍 get_bank_commission_total called with:")
     logger.info(f"   start_date: {start_date}")
     logger.info(f"   end_date: {end_date}")
     logger.info(f"   organization_id: {organization_id}")
-    
-    commission_query = db.query(
-        func.sum(BankCommission.bank_commission)
-    ).filter(
-        and_(
-            BankCommission.time_transaction >= start_date,
-            BankCommission.time_transaction < end_date,
-            BankCommission.bank_commission.isnot(None),
-            # BankCommission.bank_commission <= 0 # Тут мы думали только комиссию и отдельно возвраты, но пока вместе одним числом
-        )
+
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+
+    result = get_daily_metric_sum(
+        db,
+        metric_key="bank_commission_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        commission_query = commission_query.filter(BankCommission.organization_id == organization_id)
-    
-    result = float(commission_query.scalar() or 0)
-    # Применяем abs() по итогу
-    result = abs(result)
-    # Округляем до 2 знаков после запятой
-    result = round(result, 2)
-    
-    logger.info(f"   💰 Total commission: {result}")
-    
+
+    logger.info(f"   💰 Total commission (from daily_analytics): {result}")
     return result
 
 
@@ -740,23 +609,21 @@ def get_total_discount_from_orders(
     Returns:
         Сумма скидок
     """
-    query = db.query(func.sum(DOrder.discount)).filter(
-        and_(
-            DOrder.time_order >= start_date,
-            DOrder.time_order <= end_date,
-            DOrder.deleted == False
-        )
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+
+    return get_daily_metric_sum(
+        db,
+        metric_key="discount_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
     )
-    
-    if organization_id:
-        query = query.filter(DOrder.organization_id == organization_id)
-    
-    result = query.scalar()
-    return round(float(result or 0), 2)
 
 
 # ==================== РАБОТА С БЛЮДАМИ ====================
 
+@file_cached(ttl_seconds=600, key_prefix="avg_items_per_order")
 def get_average_items_per_order(
     db: Session,
     start_date: datetime,
@@ -810,6 +677,7 @@ def get_average_items_per_order(
     return round(total_items_count / orders_count, 2) if orders_count > 0 else 0.0
 
 
+@file_cached(ttl_seconds=600, key_prefix="popular_dishes")
 def get_popular_dishes(
     db: Session,
     start_date: datetime,
@@ -873,6 +741,7 @@ def get_popular_dishes(
     ]
 
 
+@file_cached(ttl_seconds=600, key_prefix="unpopular_dishes")
 def get_unpopular_dishes(
     db: Session,
     start_date: datetime,
@@ -929,6 +798,8 @@ def get_unpopular_dishes(
     ]
 
 
+@log_execution_time
+@file_cached(ttl_seconds=600, key_prefix="dishes_with_cost")
 def get_dishes_with_cost(
     db: Session,
     start_date: datetime,
@@ -947,6 +818,7 @@ def get_dishes_with_cost(
     Returns:
         Список кортежей (название, количество, себестоимость)
     """
+    logger.debug("[PERF] get_dishes_with_cost -> querying Sales table")
     # Приводим к датам для сравнения с open_date_typed
     start_date_only = start_date.date() if hasattr(start_date, 'date') else start_date
     end_date_only = end_date.date() if hasattr(end_date, 'date') else end_date
@@ -982,15 +854,16 @@ def get_dishes_with_cost(
 
 # ==================== РАБОТА С СОТРУДНИКАМИ ====================
 
+@file_cached(ttl_seconds=600, key_prefix="top_employees_revenue")
 def get_top_employees_by_revenue(
     db: Session,
     start_date: datetime,
     end_date: datetime,
     organization_id: Optional[int] = None,
     limit: int = 10
-) -> List[Tuple[str, str, int, float]]:
+) -> List[Tuple[str, str, int, float, int, int, float]]:
     """
-    Получить топ сотрудников по выручке
+    Получить топ сотрудников по выручке с расширенными метриками
     
     Args:
         db: сессия БД
@@ -1000,26 +873,33 @@ def get_top_employees_by_revenue(
         limit: количество результатов
         
     Returns:
-        Список кортежей (имя, iiko_id, employee_id, выручка)
+        Список кортежей (имя, iiko_id, employee_id, выручка, количество_чеков, количество_возвратов, средний_чек)
     """
+    start_date_only = start_date.date() if isinstance(start_date, datetime) else start_date
+    end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
+    
+    # Базовые фильтры
+    base_filter = and_(
+        Sales.open_date_typed >= start_date_only,
+        Sales.open_date_typed <= end_date_only,
+        Sales.cashier != 'Удаление позиций',
+        Sales.order_deleted != 'DELETED',
+        Sales.order_id.isnot(None)
+    )
+    
+    if organization_id:
+        base_filter = and_(base_filter, Sales.organization_id == organization_id)
+    
+    # Основной запрос с выручкой и количеством чеков
     query = db.query(
         Employees.name.label("waiter_name"),
         Employees.iiko_id.label("waiter_id"),
         Employees.id.label("employee_id"),
-        func.sum(Sales.dish_discount_sum_int).label("total_revenue")
+        func.sum(Sales.dish_discount_sum_int).label("total_revenue"),
+        func.count(distinct(Sales.order_id)).label("checks_count")
     ).join(
         Employees, Sales.order_waiter_id == Employees.iiko_id
-    ).filter(
-        and_(
-            Sales.open_date_typed >= start_date.date() if isinstance(start_date, datetime) else start_date,
-            Sales.open_date_typed <= end_date.date() if isinstance(end_date, datetime) else end_date,
-            Sales.cashier != 'Удаление позиций',
-            Sales.order_deleted != 'DELETED'
-        )
-    )
-    
-    if organization_id:
-        query = query.filter(Sales.organization_id == organization_id)
+    ).filter(base_filter)
     
     results = query.group_by(
         Employees.name, 
@@ -1029,15 +909,48 @@ def get_top_employees_by_revenue(
         func.sum(Sales.dish_discount_sum_int).desc()
     ).limit(limit).all()
     
-    # Округляем суммы до 2 знаков после запятой
-    return [
-        (waiter_name, waiter_id, employee_id, round(float(total_revenue or 0), 2))
-        for waiter_name, waiter_id, employee_id, total_revenue in results
-    ]
+    # Для каждого сотрудника получаем количество возвратов
+    employee_returns = {}
+    for waiter_name, waiter_id, employee_id, total_revenue, checks_count in results:
+        returns_query = db.query(
+            func.count(distinct(Sales.order_id)).label("returns_count")
+        ).join(
+            Employees, Sales.order_waiter_id == Employees.iiko_id
+        ).filter(
+            and_(
+                base_filter,
+                Employees.id == employee_id,
+                Sales.deleted_with_writeoff == 'DELETED_WITHOUT_WRITEOFF'
+            )
+        ).scalar()
+        
+        employee_returns[employee_id] = int(returns_query or 0)
+    
+    # Формируем результат с расчетом среднего чека
+    result_list = []
+    for waiter_name, waiter_id, employee_id, total_revenue, checks_count in results:
+        revenue = round(float(total_revenue or 0), 2)
+        checks = int(checks_count or 0)
+        returns = employee_returns.get(employee_id, 0)
+        avg_check = round(revenue / checks, 2) if checks > 0 else 0.0
+        
+        result_list.append((
+            waiter_name,
+            waiter_id,
+            employee_id,
+            revenue,
+            checks,
+            returns,
+            avg_check
+        ))
+    
+    return result_list
 
 
 # ==================== РАБОТА С ТРАНЗАКЦИЯМИ И РАСХОДАМИ ====================
 
+@file_cached(ttl_seconds=600, key_prefix="expenses")
+@log_execution_time
 def get_expenses_from_transactions(
     db: Session,
     start_date: datetime,
@@ -1058,120 +971,137 @@ def get_expenses_from_transactions(
     Returns:
         Словарь с структурированными данными о расходах
     """
+    logger.debug("[PERF] get_expenses_from_transactions -> getting total expenses from aggregates")
+    # Используем предагрегированную дневную метрику expenses_total для общей суммы
+    start_date_only = start_date.date() if hasattr(start_date, "date") else start_date
+    end_date_only = end_date.date() if hasattr(end_date, "date") else end_date
+
+    total_expenses = get_daily_metric_sum(
+        db,
+        metric_key="expenses_total",
+        start_date=start_date_only,
+        end_date=end_date_only,
+        organization_id=organization_id,
+    )
+
+    # Детализацию по транзакциям получаем из сырых данных (как раньше, но без пересчёта total)
     if expense_types is None:
-        expense_types = ['EXPENSES']
-    
-    # Шаг 1: Получаем аккаунты с нужными типами
-    accounts = db.query(Account).filter(
-        Account.type.in_(expense_types),
-        Account.deleted == False
-    ).all()
-    
-    # Шаг 2: Извлекаем iiko_id из аккаунтов
-    account_iiko_ids = [account.iiko_id for account in accounts if account.name != 'Зарплата']
-    
+        expense_types = ["EXPENSES", "OTHER_EXPENSES"]
+
+    accounts = (
+        db.query(Account)
+        .filter(
+            Account.type.in_(expense_types),
+            Account.deleted == False,  # noqa: E712
+        )
+        .all()
+    )
+
+    account_iiko_ids = [account.iiko_id for account in accounts if account.name != "Зарплата"]
+
     if not account_iiko_ids:
         return {
-            "expenses_amount": 0.0,
-            "data": []
+            "expenses_amount": total_expenses,
+            "data": [],
         }
+
+    # Оптимизация: делаем агрегацию в БД, затем загружаем только нужные транзакции для детализации
+    logger.debug("[PERF] get_expenses_from_transactions -> aggregating in DB")
     
-    # Шаг 3: Получаем транзакции по этим account_id
-    transactions_query = db.query(Transaction).filter(
+    # Базовый запрос для обычных транзакций - получаем только ID и суммы для группировки
+    base_query = db.query(
+        Transaction.account_type,
+        Transaction.account_name,
+        Transaction.id
+    ).filter(
         Transaction.account_id.in_(account_iiko_ids),
-        Transaction.date_typed >= start_date.date(),
-        Transaction.date_typed <= end_date.date(),
-        Transaction.is_active == True
-    )
-
-    salary_transactions_query = db.query(Transaction).filter(
-        Transaction.account_id == '13000ead-41f0-d569-d85c-704242cc91f5',
-        Transaction.date_typed >= start_date.date(),
-        Transaction.date_typed <= end_date.date(),
-        # Transaction.is_active == True,
-        # Transaction.transaction_side == 'DEBIT',
-        Transaction.contr_account_name == 'Зарплата'
+        Transaction.date_typed >= start_date_only,
+        Transaction.date_typed <= end_date_only,
+        Transaction.is_active == True,  # noqa: E712
     )
     
-    # Фильтруем по организации если указана
     if organization_id:
-        transactions_query = transactions_query.filter(
-            Transaction.organization_id == organization_id
-        )
-        salary_transactions_query = salary_transactions_query.filter(
-            Transaction.organization_id == organization_id
-        )
+        base_query = base_query.filter(Transaction.organization_id == organization_id)
     
-    transactions = transactions_query.all()
+    base_transactions = base_query.all()
     
-    salary_transactions = salary_transactions_query.all()
-
-    # logger.info(f"Salary transactions: {salary_transactions}")
-    # logger.info(f"Transactions: {transactions}")
-
-    transactions.extend(salary_transactions)
+    # Запрос для зарплаты
+    salary_query = db.query(
+        Transaction.account_type,
+        Transaction.account_name,
+        Transaction.id
+    ).filter(
+        Transaction.account_id == "13000ead-41f0-d569-d85c-704242cc91f5",
+        Transaction.date_typed >= start_date_only,
+        Transaction.date_typed <= end_date_only,
+        Transaction.contr_account_name == "Зарплата",
+    )
     
-    total_salary = abs(sum(
-        float(transaction.sum_resigned or 0) 
-        for transaction in salary_transactions
-    ))
+    if organization_id:
+        salary_query = salary_query.filter(Transaction.organization_id == organization_id)
     
-    # Считаем общую сумму расходов
-    total_expenses = abs(sum(
-        float(transaction.sum_resigned or 0) 
-        for transaction in transactions
-        if transaction.contr_account_name != 'Зарплата' and transaction.account_id != 'e0c6f1d8-4483-a946-0734-2585ed233bc4'
-    ))
-
-    total_expenses += total_salary or 0
-    total_expenses = round(total_expenses, 2)
+    salary_transactions = salary_query.all()
     
-    # Группируем транзакции по типу счета и названию счета
-    # Структура: {account_type: {account_name: [transactions]}}
+    # Объединяем и группируем по (account_type, account_name)
     grouped_data = {}
+    all_transaction_ids = []
     
-    for transaction in transactions:
-        account_type = transaction.account_type or 'Неизвестно'
-        account_name = transaction.account_name or 'Неизвестно'
+    for trans in base_transactions + salary_transactions:
+        account_type = trans.account_type or "Неизвестно"
+        account_name = trans.account_name or "Неизвестно"
+        key = (account_type, account_name)
         
-        if account_type not in grouped_data:
-            grouped_data[account_type] = {}
-        
-        if account_name not in grouped_data[account_type]:
-            grouped_data[account_type][account_name] = []
-        
-        grouped_data[account_type][account_name].append(transaction)
+        if key not in grouped_data:
+            grouped_data[key] = []
+        grouped_data[key].append(trans.id)
+        all_transaction_ids.append(trans.id)
     
-    # Формируем итоговую структуру данных
+    # Загружаем полные данные транзакций одним запросом
+    logger.debug("[PERF] get_expenses_from_transactions -> loading transaction details")
+    transactions_dict = {}
+    if all_transaction_ids:
+        transactions = db.query(Transaction).filter(
+            Transaction.id.in_(all_transaction_ids)
+        ).all()
+        transactions_dict = {t.id: t for t in transactions}
+    
+    # Формируем результат
     data = []
-    
-    for account_type, accounts_dict in grouped_data.items():
-        for account_name, trans_list in accounts_dict.items():
-            # Считаем сумму всех транзакций для этого типа и счета
-            account_total = round(abs(sum(float(t.sum_resigned or 0) for t in trans_list)), 2)
-            
-            # Формируем список транзакций
-            transactions_items = []
-            for trans in trans_list:
-                transactions_items.append({
-                    "transaction_id": trans.id,
-                    "transaction_type": account_type,
-                    "transaction_name": account_name,
-                    "transaction_amount": round(float(abs(trans.sum_resigned) or 0), 2),
-                    "transaction_datetime": trans.date_time.strftime("%Y-%m-%d %H:%M:%S") if trans.date_time else "",
-                    "transaction_comment": trans.comment or ""
-                })
-            
-            # Добавляем группу расходов
-            data.append({
+    for (account_type, account_name), trans_ids in grouped_data.items():
+        transactions_items = []
+        account_total = 0.0
+        
+        for trans_id in trans_ids:
+            trans = transactions_dict.get(trans_id)
+            if trans:
+                amount = round(float(abs(trans.sum_resigned or 0)), 2)
+                account_total += amount
+                transactions_items.append(
+                    {
+                        "transaction_id": trans.id,
+                        "transaction_type": account_type,
+                        "transaction_name": account_name,
+                        "transaction_amount": amount,
+                        "transaction_datetime": trans.date_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+                        if trans.date_time
+                        else "",
+                        "transaction_comment": trans.comment or "",
+                    }
+                )
+        
+        data.append(
+            {
                 "transaction_type": account_type,
                 "transaction_name": account_name,
-                "transaction_amount": account_total,
-                "transactions": transactions_items
-            })
-    
+                "transaction_amount": round(account_total, 2),
+                "transactions": transactions_items,
+            }
+        )
+
     return {
         "expenses_amount": total_expenses,
-        "data": data
+        "data": data,
     }
 

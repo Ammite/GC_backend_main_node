@@ -5,10 +5,23 @@ import config
 
 DATABASE_URL = config.DATABASE_URL
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
+# Настройки пула подключений для PostgreSQL
+if DATABASE_URL.startswith("postgresql") or DATABASE_URL.startswith("postgres"):
+    # Для PostgreSQL используем увеличенный пул подключений
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=20,  # Размер пула подключений
+        max_overflow=30,  # Дополнительные подключения сверх pool_size
+        pool_pre_ping=True,  # Проверка подключения перед использованием
+        pool_recycle=3600,  # Переподключение каждые 3600 секунд (1 час)
+        echo=False  # Логирование SQL запросов (False для продакшена)
+    )
+else:
+    # Для SQLite используем стандартные настройки
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
@@ -24,11 +37,42 @@ def get_db():
 def init_db():
     # Импортируем все модели для создания таблиц
     from models import (
-        User, Roles, AttendanceType, Category, DOrder, Employees, Item,
-        MenuCategory, Modifier, OrderType, Organization, Penalty,
-        ProductGroup, RestaurantSection, Reward, ScheduleType, Shift,
-        TOrder, Table, TerminalGroup, Terminal, UserReward, UserSalary, Transaction, 
-        Sales, BankCommission, Account
+        User,
+        Roles,
+        AttendanceType,
+        Category,
+        DOrder,
+        Employees,
+        Item,
+        MenuCategory,
+        Modifier,
+        OrderType,
+        Organization,
+        Penalty,
+        ProductGroup,
+        RestaurantSection,
+        Reward,
+        ScheduleType,
+        Shift,
+        TOrder,
+        Table,
+        TerminalGroup,
+        Terminal,
+        UserReward,
+        UserSalary,
+        Transaction,
+        Sales,
+        BankCommission,
+        Account,
+        DailyAnalytics,
+        DailyEmployeeAnalytics,
+        Expense,
+        Income,
+        WarehouseDocument,
+        WarehouseDocumentItem,
+        Store,
+        Conception,
+        Supplier,
     )
     Base.metadata.create_all(bind=engine)
     print("Database tables created successfully!")

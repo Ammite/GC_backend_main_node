@@ -51,3 +51,12 @@ class SalaryResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class WaiterSalesResponse(BaseModel):
+    """Сумма продаж официанта за день"""
+
+    date: str  # "DD.MM.YYYY"
+    totalAmount: float
+    ordersCount: int
+
+
