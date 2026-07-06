@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.analytics.analytics_service import get_analytics
 from schemas.analytics import AnalyticsResponse
@@ -23,7 +23,7 @@ async def get_analytics_endpoint(
     date_from: Optional[str] = Query(default=None, description="Начало периода DD.MM.YYYY (приоритет над date+period)"),
     date_to: Optional[str] = Query(default=None, description="Конец периода DD.MM.YYYY (приоритет над date+period)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить аналитику (для CEO)
@@ -56,7 +56,7 @@ async def recalculate_employee_metrics(
     to_date: Optional[str] = Query(default=None, description="Конечная дата в формате DD.MM.YYYY или YYYY-MM-DD (если не указана, используется сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации (если не указан, пересчитываются для всех)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ) -> Dict[str, Any]:
     """
     Пересчитать метрики по сотрудникам (таблица daily_employee_analytics) за указанный период.

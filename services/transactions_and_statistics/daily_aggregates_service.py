@@ -71,14 +71,21 @@ def _upsert_daily_metric(
 def recalculate_daily_metrics_for_date(
     db: Session,
     metric_date: date | datetime,
-    organization_id: Optional[int] = None,
+    organization_id: int,
 ) -> Dict[str, float]:
     """
-    Пересчитать дневные метрики за конкретную дату.
+    Пересчитать дневные метрики за конкретную дату для одной организации.
 
     Вызывает агрегирующие запросы к сырым таблицам и сохраняет результат в daily_analytics.
+    Все строки пишутся с конкретным organization_id — глобальные (NULL) строки больше не поддерживаются,
+    глобальный итог получается суммированием per-org строк на стороне читателя.
     Возвращает словарь с основными метриками для отладки.
     """
+    if organization_id is None:
+        raise ValueError(
+            "recalculate_daily_metrics_for_date требует organization_id. "
+            "Глобальный пересчёт должен проходить циклом по всем организациям."
+        )
     metric_date = _normalize_date(metric_date)
     next_date = metric_date + timedelta(days=1)
 
@@ -211,17 +218,24 @@ def recalculate_daily_metrics_for_date(
         )
 
     # ---------- 4. Выручка фабрики (по organization_id фабрики) ----------
-    factory_org_ids = [1, 21]  # ID организаций-фабрик
-    factory_query = db.query(func.sum(Transaction.sum_resigned)).filter(
-        and_(
-            Transaction.organization_id.in_(factory_org_ids),
-            Transaction.date_typed >= metric_date,
-            Transaction.date_typed < next_date,
-            Transaction.sum_resigned != 0,
-            Transaction.is_active == True,  # noqa: E712
+    # factory_revenue — это transactions, принадлежащие самим орг-ам фабрики.
+    # При пересчёте per-org сохраняем только вклад текущей организации (для орг-ий 1/21 — их вклад,
+    # для остальных — 0). При запросе без фильтра по организации per-org строки суммируются
+    # в реальную общую выручку фабрики.
+    factory_org_ids = [1, 21]
+    if organization_id in factory_org_ids:
+        factory_query = db.query(func.sum(Transaction.sum_resigned)).filter(
+            and_(
+                Transaction.organization_id == organization_id,
+                Transaction.date_typed >= metric_date,
+                Transaction.date_typed < next_date,
+                Transaction.sum_resigned != 0,
+                Transaction.is_active == True,  # noqa: E712
+            )
         )
-    )
-    factory_revenue = float(factory_query.scalar() or 0)
+        factory_revenue = float(factory_query.scalar() or 0)
+    else:
+        factory_revenue = 0.0
     results["factory_revenue"] = round(factory_revenue, 2)
     _upsert_daily_metric(
         db, metric_date, "factory_revenue", factory_revenue, organization_id
@@ -442,14 +456,10 @@ def recalculate_daily_metrics_for_date(
         db, metric_date, "orders_count", float(orders_count), organization_id
     )
 
-    # ---------- 7.2. Средний чек (из revenue_total / orders_count) ----------
-    # Средний чек рассчитывается как общая выручка (revenue_total) деленная на количество уникальных чеков (orders_count)
-    # revenue_total включает выручку из Sales + дополнительную выручку + прочие доходы (без фабрики)
-    average_check = round(total_revenue / orders_count, 2) if orders_count > 0 else 0.0
-    results["average_check"] = average_check
-    _upsert_daily_metric(
-        db, metric_date, "average_check", average_check, organization_id
-    )
+    # Средний чек НЕ хранится как агрегированная метрика:
+    # суммировать per-org средние арифметически некорректно (это не настоящий средний чек).
+    # Вместо этого см. get_daily_average_check() — он считает SUM(revenue_total)/SUM(orders_count)
+    # по требуемой области (период + опциональная организация).
 
     # ---------- 8. Расходы из Transaction ----------
     accounts_expense = (
@@ -629,6 +639,48 @@ def get_daily_metric_sum(
     return round(float(result or 0), 2)
 
 
+@log_execution_time
+def get_daily_average_check(
+    db: Session,
+    start_date: datetime | date,
+    end_date: datetime | date,
+    organization_id: Optional[int] = None,
+) -> float:
+    """
+    Корректный средний чек за период (и опционально по организации).
+
+    Считается как SUM(revenue_total) / SUM(orders_count) по per-org строкам
+    в daily_analytics. Усреднять заранее посчитанные per-day / per-org средние
+    нельзя — результат математически некорректен.
+    """
+    start = _normalize_date(start_date)
+    end = _normalize_date(end_date)
+
+    base_filter = [
+        DailyAnalytics.date >= start,
+        DailyAnalytics.date <= end,
+    ]
+    if organization_id:
+        base_filter.append(DailyAnalytics.organization_id == organization_id)
+
+    revenue_total = db.query(func.sum(DailyAnalytics.value)).filter(
+        DailyAnalytics.metric_key == "revenue_total",
+        *base_filter,
+    ).scalar() or 0
+
+    orders_total = db.query(func.sum(DailyAnalytics.value)).filter(
+        DailyAnalytics.metric_key == "orders_count",
+        *base_filter,
+    ).scalar() or 0
+
+    revenue_total = float(revenue_total)
+    orders_total = float(orders_total)
+
+    if orders_total <= 0:
+        return 0.0
+    return round(revenue_total / orders_total, 2)
+
+
 def get_daily_metric_by_subkey(
     db: Session,
     metric_key: str,
@@ -711,14 +763,20 @@ def _upsert_daily_employee_metric(
 def recalculate_daily_employee_metrics_for_date(
     db: Session,
     metric_date: date | datetime,
-    organization_id: Optional[int] = None,
+    organization_id: int,
 ) -> Dict[str, int]:
     """
-    Пересчитать дневные метрики по сотрудникам за конкретную дату.
+    Пересчитать дневные метрики по сотрудникам за конкретную дату для одной организации.
 
     Агрегирует данные из таблицы Sales и сохраняет результат в daily_employee_analytics.
+    Глобальный (NULL) пересчёт удалён: глобальный итог получается суммированием per-org строк.
     Возвращает словарь с количеством обработанных сотрудников.
     """
+    if organization_id is None:
+        raise ValueError(
+            "recalculate_daily_employee_metrics_for_date требует organization_id. "
+            "Глобальный пересчёт должен проходить циклом по всем организациям."
+        )
     metric_date = _normalize_date(metric_date)
     next_date = metric_date + timedelta(days=1)
 

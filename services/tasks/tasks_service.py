@@ -16,6 +16,8 @@ def get_tasks(
     employee_id: Optional[int] = None,
     date: Optional[str] = None,
     due_date: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
 ) -> List[Task]:
     query = db.query(Task)
 
@@ -23,22 +25,39 @@ def get_tasks(
         query = query.filter(Task.organization_id == organization_id)
     if employee_id is not None:
         query = query.filter(Task.employee_id == employee_id)
-    if date:
+
+    # Интервал по due_date — приоритет над `date` / `due_date`.
+    if date_from or date_to:
         try:
-            target_date = datetime.strptime(date, "%d.%m.%Y").replace(
-                hour=0, minute=0, second=0, microsecond=0
-            )
-            query = query.filter(Task.due_date >= target_date)
+            if date_from:
+                start = datetime.strptime(date_from, "%d.%m.%Y").replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                query = query.filter(Task.due_date >= start)
+            if date_to:
+                end = datetime.strptime(date_to, "%d.%m.%Y").replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
+                query = query.filter(Task.due_date <= end)
         except ValueError:
             pass
-    if due_date:
-        try:
-            target_date = datetime.strptime(due_date, "%d.%m.%Y")
-            start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-            query = query.filter(Task.due_date >= start_of_day, Task.due_date <= end_of_day)
-        except ValueError:
-            pass
+    else:
+        if date:
+            try:
+                target_date = datetime.strptime(date, "%d.%m.%Y").replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                query = query.filter(Task.due_date >= target_date)
+            except ValueError:
+                pass
+        if due_date:
+            try:
+                target_date = datetime.strptime(due_date, "%d.%m.%Y")
+                start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                query = query.filter(Task.due_date >= start_of_day, Task.due_date <= end_of_day)
+            except ValueError:
+                pass
 
     return query.order_by(Task.created_at.desc()).all()
 

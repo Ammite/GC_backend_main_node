@@ -5,7 +5,7 @@
 чтобы не блокировать основной event loop FastAPI и не замораживать остальные API-запросы.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Dict, Any, Optional
 import logging
 from datetime import datetime, timedelta, date
@@ -25,6 +25,7 @@ from utils.sync_runner import (
     get_sync_status,
     get_all_sync_statuses,
 )
+from utils.security import require_role
 import config
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ router = APIRouter()
 
 
 @router.post("/organizations")
-async def sync_organizations() -> Dict[str, Any]:
+async def sync_organizations(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация организаций с iiko API
     """
@@ -62,7 +63,7 @@ async def sync_organizations() -> Dict[str, Any]:
 
 
 @router.post("/organizations/cloud-ids")
-async def sync_cloud_org_ids() -> Dict[str, Any]:
+async def sync_cloud_org_ids(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация iiko_id_cloud для организаций.
     Матчит Cloud API организации по имени с локальными и сохраняет iiko_id_cloud.
@@ -82,6 +83,7 @@ async def sync_cloud_org_ids() -> Dict[str, Any]:
 @router.post("/employees")
 async def sync_employees(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация сотрудников с iiko API
@@ -107,6 +109,7 @@ async def sync_employees(
 @router.post("/terminal-groups")
 async def sync_terminal_groups(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация групп терминалов с iiko API
@@ -132,6 +135,7 @@ async def sync_terminal_groups(
 @router.post("/terminals")
 async def sync_terminals(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация терминалов с iiko API
@@ -155,7 +159,7 @@ async def sync_terminals(
 
 
 @router.post("/roles")
-async def sync_roles() -> Dict[str, Any]:
+async def sync_roles(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация ролей с iiko API
     """
@@ -178,7 +182,7 @@ async def sync_roles() -> Dict[str, Any]:
 
 
 @router.post("/attendance-types")
-async def sync_attendance_types() -> Dict[str, Any]:
+async def sync_attendance_types(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация типов явок с iiko API
     """
@@ -203,6 +207,7 @@ async def sync_attendance_types() -> Dict[str, Any]:
 @router.post("/restaurant-sections")
 async def sync_restaurant_sections(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация секций ресторана с iiko API
@@ -228,6 +233,7 @@ async def sync_restaurant_sections(
 @router.post("/tables")
 async def sync_tables(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация столов с iiko API.
@@ -271,7 +277,7 @@ async def sync_tables(
 
 
 @router.post("/accounts")
-async def sync_accounts() -> Dict[str, Any]:
+async def sync_accounts(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация счетов с iiko API (Server API)
     """
@@ -294,7 +300,7 @@ async def sync_accounts() -> Dict[str, Any]:
 
 
 @router.post("/salaries")
-async def sync_salaries() -> Dict[str, Any]:
+async def sync_salaries(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация окладов сотрудников с iiko API (Server API)
     """
@@ -317,7 +323,7 @@ async def sync_salaries() -> Dict[str, Any]:
 
 
 @router.post("/payment-types")
-async def sync_payment_types() -> Dict[str, Any]:
+async def sync_payment_types(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация видов оплат с iiko API (Cloud API)
     """
@@ -346,6 +352,7 @@ async def sync_payment_types() -> Dict[str, Any]:
 async def sync_shifts(
     date_from: Optional[str] = Query(default=None, description="Дата начала в формате YYYY-MM-DD (по умолчанию 30 дней назад)"),
     date_to: Optional[str] = Query(default=None, description="Дата конца в формате YYYY-MM-DD (по умолчанию сегодня)"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация смен сотрудников с iiko API (Server API)
@@ -397,6 +404,7 @@ async def sync_shifts(
 @router.post("/menu")
 async def sync_menu(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация меню с iiko API
@@ -437,6 +445,7 @@ async def sync_menu(
 @router.post("/all")
 async def sync_all(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Полная синхронизация всех данных с iiko API
@@ -473,6 +482,7 @@ async def sync_all(
 @router.post("/organizations-employees-terminals")
 async def sync_organizations_employees_terminals(
     organization_id: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация организаций, сотрудников и терминалов с iiko API
@@ -528,6 +538,7 @@ async def sync_organizations_employees_terminals(
 async def sync_transactions(
     from_date: str = None,
     to_date: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация транзакций с iiko API (последовательная обработка дней из-за блокирующей авторизации)
@@ -610,6 +621,7 @@ async def sync_transactions(
 async def sync_sales(
     from_date: str = None,
     to_date: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация продаж с iiko API (последовательная обработка дней из-за блокирующей авторизации)
@@ -688,6 +700,7 @@ async def sync_sales(
 async def sync_by_modification_date(
     from_date: str = None,
     to_date: str = None,
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация по дате изменения транзакций.
@@ -735,7 +748,7 @@ async def sync_by_modification_date(
 
 
 @router.post("/items/cloud")
-async def sync_items_cloud_all() -> Dict[str, Any]:
+async def sync_items_cloud_all(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация товаров из Cloud API для всех организаций
     """
@@ -763,7 +776,7 @@ async def sync_items_cloud_all() -> Dict[str, Any]:
 
 
 @router.post("/items/cloud/{organization_id}")
-async def sync_items_cloud_org(organization_id: int) -> Dict[str, Any]:
+async def sync_items_cloud_org(organization_id: int, _user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация товаров из Cloud API для конкретной организации
     """
@@ -787,7 +800,7 @@ async def sync_items_cloud_org(organization_id: int) -> Dict[str, Any]:
 
 
 @router.post("/items/server")
-async def sync_items_server() -> Dict[str, Any]:
+async def sync_items_server(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация товаров из Server API
     """
@@ -815,6 +828,7 @@ async def recalculate_daily_metrics(
     from_date: Optional[str] = Query(default=None, description="Начальная дата в формате YYYY-MM-DD (если не указана, используется to_date)"),
     to_date: Optional[str] = Query(default=None, description="Конечная дата в формате YYYY-MM-DD (если не указана, используется сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации (если не указан, пересчитываются для всех)"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Пересчитать дневные метрики (таблица daily_analytics) за указанный период.
@@ -908,6 +922,7 @@ async def recalculate_employee_metrics(
     from_date: Optional[str] = Query(default=None, description="Начальная дата в формате YYYY-MM-DD (если не указана, используется to_date)"),
     to_date: Optional[str] = Query(default=None, description="Конечная дата в формате YYYY-MM-DD (если не указана, используется сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации (если не указан, пересчитываются для всех)"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Пересчитать метрики по сотрудникам (таблица daily_employee_analytics) за указанный период.
@@ -1003,6 +1018,7 @@ async def sync_writeoff_documents(
     from_date: Optional[str] = Query(default=None, description="Дата начала в формате YYYY-MM-DD"),
     to_date: Optional[str] = Query(default=None, description="Дата конца в формате YYYY-MM-DD"),
     status: Optional[str] = Query(default=None, description="Статус документа (опционально)"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация актов списания с iiko API
@@ -1043,6 +1059,7 @@ async def sync_writeoff_documents(
 async def sync_incoming_invoices(
     from_date: Optional[str] = Query(default=None, description="Дата начала в формате YYYY-MM-DD"),
     to_date: Optional[str] = Query(default=None, description="Дата конца в формате YYYY-MM-DD"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация приходных накладных с iiko API
@@ -1083,6 +1100,7 @@ async def sync_incoming_invoices(
 async def sync_outgoing_invoices(
     from_date: Optional[str] = Query(default=None, description="Дата начала в формате YYYY-MM-DD"),
     to_date: Optional[str] = Query(default=None, description="Дата конца в формате YYYY-MM-DD"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация расходных накладных с iiko API
@@ -1124,6 +1142,7 @@ async def sync_all_documents(
     from_date: Optional[str] = Query(default=None, description="Дата начала в формате YYYY-MM-DD"),
     to_date: Optional[str] = Query(default=None, description="Дата конца в формате YYYY-MM-DD"),
     status: Optional[str] = Query(default=None, description="Статус для актов списания (опционально)"),
+    _user = Depends(require_role("Владелец")),
 ) -> Dict[str, Any]:
     """
     Синхронизация всех типов документов (акты списания, приходные и расходные накладные) с iiko API
@@ -1161,7 +1180,7 @@ async def sync_all_documents(
 
 
 @router.post("/conceptions")
-async def sync_conceptions() -> Dict[str, Any]:
+async def sync_conceptions(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация концепций с iiko API
     """
@@ -1187,7 +1206,7 @@ async def sync_conceptions() -> Dict[str, Any]:
 
 
 @router.post("/suppliers")
-async def sync_suppliers() -> Dict[str, Any]:
+async def sync_suppliers(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация поставщиков с iiko API
     """
@@ -1213,7 +1232,7 @@ async def sync_suppliers() -> Dict[str, Any]:
 
 
 @router.post("/stores")
-async def sync_stores() -> Dict[str, Any]:
+async def sync_stores(_user = Depends(require_role("Владелец"))) -> Dict[str, Any]:
     """
     Синхронизация складов с iiko API
     """

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.reports.reports_service import get_order_reports, get_moneyflow_reports, get_sales_dynamics
 from services.reports.personnel_service import get_personnel_report
@@ -22,7 +22,7 @@ async def get_order_reports_endpoint(
     date_from: Optional[str] = Query(default=None, description="Начало периода DD.MM.YYYY (приоритет над date+period)"),
     date_to: Optional[str] = Query(default=None, description="Конец периода DD.MM.YYYY (приоритет над date+period)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить отчеты по заказам
@@ -57,7 +57,7 @@ async def get_moneyflow_reports_endpoint(
     date_from: Optional[str] = Query(default=None, description="Начало периода DD.MM.YYYY (приоритет над date+period)"),
     date_to: Optional[str] = Query(default=None, description="Конец периода DD.MM.YYYY (приоритет над date+period)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Получить денежные отчеты
@@ -92,7 +92,7 @@ async def get_sales_dynamics_endpoint(
     date_from: Optional[str] = Query(default=None, description="Начало периода DD.MM.YYYY (приоритет над date+days)"),
     date_to: Optional[str] = Query(default=None, description="Конец периода DD.MM.YYYY (приоритет над date+days)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить динамику продаж за последние N дней
@@ -125,7 +125,7 @@ async def get_personnel_report_endpoint(
     to_date: Optional[str] = Query(default=None, description="Дата конца периода в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить отчет по персоналу за период

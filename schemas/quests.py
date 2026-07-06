@@ -51,8 +51,9 @@ class CreateQuestRequest(BaseModel):
     reward: float
     target: int
     unit: str
-    date: str  # "DD.MM.YYYY"
-    employeeIds: Optional[List[str]] = None  # Опционально, если для конкретных сотрудников
+    date: str  # "DD.MM.YYYY" — дата начала
+    durationDate: Optional[str] = None  # "DD.MM.YYYY" — дата окончания (фронт шлёт, default +7 дней)
+    employeeIds: Optional[List[str]] = None
     organization_id: Optional[int] = None
 
 
@@ -70,7 +71,8 @@ class UpdateQuestRequest(BaseModel):
     reward: Optional[float] = None
     target: Optional[int] = None
     unit: Optional[str] = None
-    date: Optional[str] = None  # "DD.MM.YYYY"
+    date: Optional[str] = None  # "DD.MM.YYYY" — дата начала
+    durationDate: Optional[str] = None  # "DD.MM.YYYY" — дата окончания
     employeeIds: Optional[List[str]] = None
 
 

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import logging
 
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.departments.departments_service import (
     sync_departments_from_iiko,
@@ -25,7 +25,7 @@ router = APIRouter(prefix="", tags=["departments"])
 @router.post("/departments/sync", response_model=SyncDepartmentsResponse)
 async def sync_departments(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Владелец")),
 ):
     """
     Синхронизировать департаменты из iiko API.
@@ -47,7 +47,7 @@ async def sync_departments(
 def get_departments(
     is_active: Optional[bool] = Query(default=None, description="Фильтр по активности"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить список всех департаментов.
@@ -75,7 +75,7 @@ def get_departments(
 def get_department(
     department_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить департамент по ID.
@@ -102,7 +102,7 @@ def get_department(
 def get_department_by_iiko_id_endpoint(
     iiko_id: str,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить департамент по iiko_id.

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Отчёт по фиксам — Грузин Кузин — 2026-05-21</title>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --text: #1f2530;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --done: #10b981;
+    --done-bg: #ecfdf5;
+    --warn: #f59e0b;
+    --warn-bg: #fffbeb;
+    --danger: #ef4444;
+    --code-bg: #f3f4f6;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 32px 16px;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1024px; margin: 0 auto; }
+  h1 {
+    font-size: 28px; margin: 0 0 4px 0;
+  }
+  .subtitle { color: var(--muted); margin-bottom: 28px; font-size: 15px; }
+  .summary {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 28px;
+  }
+  .summary h2 { margin: 0 0 12px 0; font-size: 18px; }
+  .stat-row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .stat {
+    flex: 1 1 200px; min-width: 200px;
+    background: #f9fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+  }
+  .stat .num { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat .label { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .task {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 22px 24px; margin-bottom: 18px;
+  }
+  .task h2 {
+    margin: 0 0 6px 0; font-size: 19px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 11px; font-weight: 600;
+    padding: 2px 9px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .badge.done { background: var(--done-bg); color: var(--done); }
+  .badge.partial { background: var(--warn-bg); color: var(--warn); }
+  .task .tagline { color: var(--muted); margin: 0 0 14px 0; font-size: 14px; }
+  .task h3 {
+    font-size: 14px; margin: 16px 0 6px 0;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .task ul { margin: 0; padding-left: 22px; }
+  .task li { margin: 4px 0; }
+  .task .deferred {
+    background: var(--warn-bg);
+    border-left: 3px solid var(--warn);
+    padding: 10px 14px; margin-top: 14px; border-radius: 4px;
+  }
+  .task .deferred h3 { margin-top: 0; color: var(--warn); }
+  code, .filepath {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .footer {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-top: 18px;
+  }
+  .footer h2 { margin-top: 0; font-size: 18px; }
+  .files {
+    background: #fafafd; border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    overflow-x: auto;
+  }
+  .files li { list-style: none; padding: 2px 0; }
+  .next {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-top: 18px;
+  }
+  .next h2 { margin-top: 0; font-size: 18px; }
+  .next ol li { margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Отчёт по фиксам — «Грузин Кузин»</h1>
+<div class="subtitle">2026-05-21 · backend_main_node · все 8 задач из канбана отработаны</div>
+
+<div class="summary">
+  <h2>Сводка</h2>
+  <div class="stat-row">
+    <div class="stat">
+      <div class="num">8 / 8</div>
+      <div class="label">задач отработано</div>
+    </div>
+    <div class="stat">
+      <div class="num">6</div>
+      <div class="label">полностью закрыты «быстрыми» фиксами</div>
+    </div>
+    <div class="stat">
+      <div class="num">2</div>
+      <div class="label">частично — большие redesign-куски отложены</div>
+    </div>
+    <div class="stat">
+      <div class="num">1</div>
+      <div class="label">новая SQL-миграция (не запускали — посмотри глазами)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== TASK 6 ===================== -->
+<div class="task">
+  <h2>Task 6 · Нагрузка iiko / 91-дневный запрос <span class="badge done">сделано</span></h2>
+  <p class="tagline">Корневая причина 4 мая. После фикса лимит iiko 65 дней не нарушается ни одним вызовом, который мы знаем.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li>В <code>get_transactions_by_modification_date</code> (<span class="filepath">services/iiko/iiko_service.py:1000</span>) окно <code>DateTime.DateTyped</code> сжато с <b>90 → 60 дней</b>. Бизнес-решение: правки задним числом обычно укладываются в 60 дней.</li>
+    <li><code>get_transactions</code> и <code>get_sales</code> (<span class="filepath">iiko_service.py:971-1042</span>) теперь чанкуются по дням — раньше шли одним POST-ом на весь период.</li>
+    <li><code>POST /sync/by-modification-date</code> (<span class="filepath">routers/iiko/sync.py:688</span>): дефолт <code>from_date = now-60</code> вместо 90, валидация <code>to-from ≤ 60</code> с 400.</li>
+    <li><code>GET /documents/payrolls</code> (<span class="filepath">routers/documents/documents.py:774</span>): тоже валидация ≤ 60 дней.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Общий декоратор чанкования + guardrail в <code>_make_request</code> — на будущее, чтобы новые методы автоматически попадали под защиту.</li>
+      <li>Не-OLAP методы с date-params (<code>get_server_shifts</code>, <code>get_payrolls</code>, <code>get_server_product_expense_report</code>) — пока без чанкования (не самые «жирные»).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 1 ===================== -->
+<div class="task">
+  <h2>Task 1 · Юзеры, роли, пароли <span class="badge done">сделано</span></h2>
+  <p class="tagline">Закрыли публичные дыры в auth и подготовили перенос ролей на 253 существующих юзера.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><b>Удалён публичный</b> <code>POST /register</code> — любой не мог больше создать себе аккаунт.</li>
+    <li><code>PUT /change-password</code> теперь требует <code>app_role ∈ {Владелец, Менеджер}</code>, иначе 403.</li>
+    <li><code>POST /login</code> отказывает уволенным сотрудникам (<code>Employees.deleted=True</code>). 73 живых аккаунта уволенных — больше не зайдут.</li>
+    <li>Auth-события (login success / fail / отказ уволенному / смена пароля) теперь логируются — раньше не было ни одной записи.</li>
+    <li><code>create_users_for_all_employees</code> теперь выставляет <code>roles_id</code> из <code>Employee.main_role_id</code> и <code>app_role</code> по маппингу (ADM/MN0/MN1/TekhD/GBuh → «Менеджер», WR1 → «Официант», остальные → «Сотрудник»).</li>
+    <li>Создана SQL-миграция <span class="filepath">migrations/2026_05_21_populate_user_roles_and_app_role.sql</span> — однократный <code>UPDATE</code> для 253 существующих юзеров с <code>roles_id/app_role = NULL</code>. <b>Запустить руками</b>, потому что маппинг ролей хочется глазами посмотреть.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Файловое логирование FastAPI (auth-логи сейчас в stdout, не в файле). Решать общим конфигом — пересекается с task 2.</li>
+      <li>Кейс-сенситивность логина и проверка слабых паролей — не критично, при необходимости отдельной задачей.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 8 ===================== -->
+<div class="task">
+  <h2>Task 8 · Цикл оформления заказа <span class="badge partial">частично</span></h2>
+  <p class="tagline">Сделали критичные «быстрые» фиксы. Полный цикл (модификаторы, split-cheque, открытие стола, prebill, merge, move) — отдельная итерация redesign'а.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><b>Закрыт критичный баг «заказ закрыт без оплат»</b>: если <code>change_payments_in_iiko</code> вернул пустой dict или ошибку — <code>close_order_in_iiko</code> больше не вызывается, фронт получает честный «требуется проверка». Раньше iiko мог закрыть заказ «не пробитым».</li>
+    <li>Прекращено враньё в <code>POST /orders</code>: если <code>IIKO_SEND_ORDERS=true</code>, но <code>iiko_id</code> не пришёл — теперь message «iiko sending was attempted but failed (see logs)», а не «sent to iiko».</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено (нужен redesign)</h3>
+    <ul>
+      <li>Открытие стола: <code>GET /tables</code> хардкодит <code>status="available"</code>, <code>currentOrderId=null</code>. Можно создать два параллельных заказа на одном столе.</li>
+      <li>Модификаторы / split-cheque / prebill / merge / move-table — отсутствуют в API.</li>
+      <li><code>tipAmount</code> сохраняется локально, но не пробрасывается в iiko Cloud payload.</li>
+      <li><code>TOrder.count_order = int(amount)</code> теряет дробные граммовки.</li>
+      <li><code>CLOUD_OLD</code> vs <code>CLOUD</code> для order-вызовов — бизнес-вопрос.</li>
+      <li>Кросс-валидация «product/payment_type/table принадлежат organization заказа» — отсутствует.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 2 ===================== -->
+<div class="task">
+  <h2>Task 2 · Не отправляются расходы <span class="badge done">сделано</span></h2>
+  <p class="tagline">Молчаливые success-ы при ошибке iiko и при незаполненном department.iiko_id — пресечены.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><code>create_outgoing_invoice_in_iiko</code> (<span class="filepath">services/warehouse/invoice_service.py</span>): добавлены проверки <code>valid=false</code> и «нет id и нет valid=true» → возвращаем ошибку, документ <b>не сохраняется в БД</b>.</li>
+    <li><code>create_writeoff_document_in_iiko</code> (<span class="filepath">services/warehouse/writeoff_service.py</span>): аналогичные проверки.</li>
+    <li><code>POST /expenses</code> (<span class="filepath">routers/expenses/expenses.py</span>): pre-check, если у organization не задан <code>department.iiko_id</code> — 400 <b>до</b> создания локального расхода. Раньше расход создавался и возвращалось «success: true (в iiko не отправлено)» — фронт это игнорировал, копились дубликаты.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Хардкоды <code>DEFAULT_STORE_IIKO_ID</code>/<code>DEFAULT_CONCEPTION_IIKO_ID</code> в расходной накладной (привязаны к одной точке) — бизнес-вопрос, нужны per-org дефолты.</li>
+      <li><code>TESTING_MODE=false</code> + payload фронта без <code>storeId</code> — несогласованность фронт-бэк, не наша зона.</li>
+      <li>Файловое логирование FastAPI — пересекается с task 1.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 5 ===================== -->
+<div class="task">
+  <h2>Task 5 · API окладов <span class="badge done">сделано</span></h2>
+  <p class="tagline">Починили сломанный SQL и подключили реальные оклады из iiko вместо хардкодных 5%.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><b>Починен сломанный запрос</b> <code>UserSalary.user_id</code> → <code>UserSalary.employee_id</code> (<span class="filepath">services/salary/salary_service.py</span>). Колонку переименовали миграцией 2026-03-19, код не обновили — запрос фактически не работал.</li>
+    <li>Расчёт зарплаты официанта теперь использует <code>UserSalary.salary</code> (реальный оклад из iiko) с фильтром по периоду <code>[date_from, date_to]</code>. Если записи нет — fallback на старые 5% от выручки.</li>
+    <li>В файле задачи остались curl-команды для будущего ресёрча — они идут <b>напрямую</b> в iiko Server API, минуя наш <code>IikoService</code>, поэтому kill switch их не задевает.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Полноценная интеграция «оклад + история + steadySalary» в профиле сотрудника — отдельная фича.</li>
+      <li>Часовая ставка через <code>/employees/attendance</code> — отдельная фича.</li>
+      <li>Документация iiko (<code>rabota-s-dannymi-oklada</code>) — JS SPA, контент не отдаётся фетчером. Когда менеджер сможет — пусть пришлёт скриншоты.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 3 ===================== -->
+<div class="task">
+  <h2>Task 3 · Редактирование заказа <span class="badge partial">частично</span></h2>
+  <p class="tagline">Фронту теперь видно, что часть изменений не уехала в iiko. Полноценный state machine — отдельной итерацией.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><code>PUT /orders/{id}</code>: добавлен diff-анализ. Если у заказа есть <code>iiko_id</code> и фронт меняет что-то, что iiko Cloud не поддерживает (удалить позицию, изменить количество существующей, сменить tableId/waiterId/guests/comment), бэк:
+      <ul>
+        <li>пишет в логи warning с конкретным списком расхождений;</li>
+        <li>возвращает <code>message</code> с честным предупреждением «часть изменений осталась только у нас: …».</li>
+      </ul>
+    </li>
+    <li>Добавление новых позиций (как и раньше) уходит в iiko через <code>add_items</code>.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено (нужен redesign)</h3>
+    <ul>
+      <li>State machine <code>DRAFT → SENT → PAID → CANCELLED</code> с enum-полем — сейчас <code>state_order</code> остаётся String.</li>
+      <li>Разделение <code>PUT /orders/{id}</code> на <code>POST/DELETE /orders/{id}/items</code> + <code>PATCH /orders/{id}</code> meta — ломает текущий фронт.</li>
+      <li>409 Conflict вместо warning при попытке удалить позицию у отправленного заказа — оставлено 200 + предупреждение, чтобы не сломать фронт.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 4 ===================== -->
+<div class="task">
+  <h2>Task 4 · Виды оплаты <span class="badge done">сделано</span></h2>
+  <p class="tagline">Добавлена серверная валидация payment_type ↔ organization при оплате. Полный пересинк — на финальной стадии тестов после снятия kill switch.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><code>change_payments_in_iiko</code> (<span class="filepath">services/orders/orders_services.py</span>): добавлен helper <code>_pt_belongs_to_org</code> и проверка для обеих веток резолва (<code>paymentType: int</code> и <code>paymentTypes[]</code>).</li>
+    <li>Если payment_type не принадлежит организации (<code>org_cloud_id</code> отсутствует в <code>organization_iiko_ids</code>) — пункт <b>выкидывается</b> из payload в iiko с warning. Если все выкинуты — <code>close</code> не вызывается (фикс task 8), фронт получает «требуется проверка».</li>
+    <li>NULL в <code>organization_iiko_ids</code> по-прежнему трактуется как «всем» (сертификаты, бонусы).</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Пересинк payment_types — kill switch включён, пересинкнётся автоматически на финале.</li>
+      <li>«Мусорные» Server-only виды с NULL-scope (например <code>Kaspi Рестораны1</code> id=36) — нужно глазами посмотреть после пересинка и руками проставить организацию.</li>
+      <li>Эвристики <code>_guess_is_payable</code> и <code>_extract_jur_person_hint</code> — требуют бизнес-уточнения маппинга юрлиц.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== TASK 7 ===================== -->
+<div class="task">
+  <h2>Task 7 · Раздел «Мотивация» <span class="badge done">сделано</span></h2>
+  <p class="tagline">Бэкенд для UI готов — фронту осталось обвязать кнопки и табы.</p>
+
+  <h3>Что сделано</h3>
+  <ul>
+    <li><code>GET /tasks</code>: новые query-параметры <code>date_from</code>/<code>date_to</code> (DD.MM.YYYY) — фильтр по <code>due_date</code>. Legacy <code>date</code>/<code>due_date</code> оставлены.</li>
+    <li><code>GET /quests/active</code>: новые <code>date_from</code>/<code>date_to</code> + <code>include_expired</code>. Логика окна — overlap <code>[start_date, end_date]</code> с интервалом.</li>
+    <li><b>Дефолт «последние 7 дней»</b> выставляется на бэке: если фронт ничего не передал по датам, <code>date_to=сегодня</code>, <code>date_from=сегодня − 7</code>.</li>
+    <li>В роутере <code>/quests/active</code> при дефолтном окне ещё включается <code>include_expired=true</code> — чтобы «история квестов» содержала и истёкшие.</li>
+  </ul>
+
+  <div class="deferred">
+    <h3>Отложено</h3>
+    <ul>
+      <li>Сами кнопки «Добавить» / «Посмотреть квесты» и табы — это <b>frontend</b>, в другом репозитории. Бэкенд для них готов.</li>
+      <li>Поле <code>organization_id</code> на самом <code>Reward</code> — архитектурный риск, мульти-org фильтр квестов сейчас работает только через сотрудников.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== FILES ===================== -->
+<div class="footer">
+  <h2>Изменённые файлы</h2>
+  <div class="files">
+    <ul>
+      <li>services/iiko/iiko_service.py</li>
+      <li>services/warehouse/invoice_service.py</li>
+      <li>services/warehouse/writeoff_service.py</li>
+      <li>services/salary/salary_service.py</li>
+      <li>services/employees/employees_service.py</li>
+      <li>services/orders/orders_services.py</li>
+      <li>services/tasks/tasks_service.py</li>
+      <li>services/quests/quests_service.py</li>
+      <li>routers/auth/auth.py</li>
+      <li>routers/iiko/sync.py</li>
+      <li>routers/documents/documents.py</li>
+      <li>routers/expenses/expenses.py</li>
+      <li>routers/orders/order.py</li>
+      <li>routers/tasks/tasks.py</li>
+      <li>routers/quests/quests.py</li>
+      <li>main.py (зачищены упоминания /register в Swagger docstring)</li>
+      <li>migrations/2026_05_21_populate_user_roles_and_app_role.sql · НОВЫЙ</li>
+      <li>_kanban/scripts/README.md · НОВЫЙ</li>
+      <li>_kanban/made_task_1..8_*.md · все 8 файлов с историей и решениями</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===================== NEXT ===================== -->
+<div class="next">
+  <h2>Что делать дальше</h2>
+  <ol>
+    <li><b>Прогнать SQL-миграцию</b> <span class="filepath">2026_05_21_populate_user_roles_and_app_role.sql</span> на dev/staging, потом на prod. Сначала dry-run по контрольным <code>SELECT</code> в конце файла. Проверить распределение <code>app_role</code> — нет ли странностей в «Сотрудник» (это все «не менеджеры и не официанты»: повара, бармены, бухгалтеры).</li>
+    <li><b>Уточнить бизнес-маппинг ролей</b>: должен ли повар иметь <code>app_role = «Сотрудник»</code> или какая-то другая категория? Если меняем — поправить и Python (<code>_map_role_code_to_app_role</code> в <span class="filepath">services/employees/employees_service.py</span>), и SQL-миграцию.</li>
+    <li><b>Финальная стадия тестов</b> — снимаем <code>IIKO_REQUESTS_DISABLED=false</code> на ограниченное время и проверяем:
+      <ul>
+        <li>91-дневный запрос больше не уходит (логи cron-а);</li>
+        <li>пересинкается payment_types;</li>
+        <li>расходные накладные / акты списания / pay-out отправляются корректно;</li>
+        <li>цикл «создать → оплатить» в zall заказе доходит до iikoFront «пробит».</li>
+      </ul>
+    </li>
+    <li><b>Большие отложенные задачи</b> (отдельной итерацией дизайна):
+      <ul>
+        <li>State machine для заказов (task 3).</li>
+        <li>Полный цикл официанта: модификаторы, split-cheque, открытие стола (task 8).</li>
+        <li>Глубокая интеграция окладов в профиль сотрудника (task 5).</li>
+        <li>Файловый логгер FastAPI для аудита (касается task 1 и task 2).</li>
+        <li>Общий декоратор/guardrail чанкования на iiko (task 6).</li>
+      </ul>
+    </li>
+  </ol>
+</div>
+
+</div>
+</body>
+</html>

@@ -11,6 +11,7 @@ from models.store import Store
 from models.conception import Conception
 from models.supplier import Supplier
 from models.organization import Organization
+from models.department import Department
 from services.iiko.iiko_service import IikoService
 
 logger = logging.getLogger(__name__)
@@ -45,42 +46,55 @@ async def sync_stores_from_iiko(db: Session) -> Dict[str, Any]:
             }
         
         logger.info(f"Получено складов из iiko API: {len(stores_data)}")
-        
+
+        # Карта Department.iiko_id → Organization.id (резолв через org.department_id)
+        dept_to_org: Dict[str, int] = {}
+        for d in db.query(Department).all():
+            o = db.query(Organization).filter(Organization.department_id == d.id).first()
+            if o:
+                dept_to_org[d.iiko_id] = o.id
+
         synced_count = 0
-        
+        org_linked_count = 0
+
         for store_data in stores_data:
             iiko_id = store_data.get("id") or store_data.get("storeId")
             name = store_data.get("name") or store_data.get("storeName")
             code = store_data.get("code") or store_data.get("storeCode")
-            
+            parent_id = store_data.get("parent_id") or store_data.get("parentId")
+            organization_id = dept_to_org.get(parent_id) if parent_id else None
+
             if not iiko_id:
                 logger.warning(f"Пропущен склад без iiko_id: {store_data}")
                 continue
-            
-            # Ищем существующий склад
+
             existing_store = db.query(Store).filter(
                 Store.iiko_id == iiko_id
             ).first()
-            
+
             if existing_store:
-                # Обновляем данные
                 existing_store.name = name or existing_store.name
                 existing_store.code = code or existing_store.code
+                if organization_id and existing_store.organization_id != organization_id:
+                    existing_store.organization_id = organization_id
+                    org_linked_count += 1
                 existing_store.updated_at = datetime.now()
             else:
-                # Создаем новый склад
                 new_store = Store(
                     iiko_id=iiko_id,
                     name=name or f"Склад {iiko_id}",
-                    code=code
+                    code=code,
+                    organization_id=organization_id,
                 )
+                if organization_id:
+                    org_linked_count += 1
                 db.add(new_store)
-            
+
             synced_count += 1
-        
+
         db.commit()
-        
-        logger.info(f"Синхронизировано складов: {synced_count}")
+
+        logger.info(f"Синхронизировано складов: {synced_count}, привязано к org: {org_linked_count}")
         
         return {
             "success": True,

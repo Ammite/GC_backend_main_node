@@ -14,6 +14,64 @@ from services.iiko import data_frames
 
 logger = logging.getLogger(__name__)
 
+
+# =============================================================================
+# Политика чанкования iiko-запросов с диапазоном дат (бизнес-решение 2026-05-24)
+# =============================================================================
+# Лимит iiko Server по «открытому периоду» — 65 дней. У OLAP-отчётов нехватка
+# памяти начинается на ~91 дне (зафиксировано инцидентом 2026-05-04).
+# Все методы с date-from/date-to чанкуются ПО ДНЯМ. Максимальное окно — 60 дней.
+# Если пришёл диапазон > 60 дней — это либо ошибка вызывающего кода, либо
+# user-input (тогда возвращаем 400 в роутере до того, как сюда зашло).
+MAX_IIKO_DATE_WINDOW_DAYS = 60
+
+
+def _to_date(value):
+    """Привести datetime / date / 'YYYY-MM-DD' к date."""
+    if isinstance(value, str):
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    if isinstance(value, datetime):
+        return value.date()
+    return value  # уже date
+
+
+def iter_day_chunks(date_from, date_to):
+    """Итератор по дням [date_from, date_to] включительно.
+
+    Возвращает кортежи (chunk_start_date, chunk_end_date_exclusive) — для
+    использования с iiko-фильтрами в полуоткрытом интервале.
+    Бросает ValueError если окно > MAX_IIKO_DATE_WINDOW_DAYS.
+    """
+    start = _to_date(date_from)
+    end = _to_date(date_to)
+    if start > end:
+        raise ValueError(f"date_from > date_to ({start} > {end})")
+    if (end - start).days > MAX_IIKO_DATE_WINDOW_DAYS:
+        raise ValueError(
+            f"Окно {(end - start).days} дней превышает лимит iiko "
+            f"({MAX_IIKO_DATE_WINDOW_DAYS} дней). Чанкование рассчитано на узкое окно — "
+            f"для большего диапазона разрезайте на стороне вызывающего."
+        )
+    current = start
+    while current <= end:
+        yield current, current + timedelta(days=1)
+        current += timedelta(days=1)
+
+
+def assert_iiko_date_window(date_from, date_to, label: str = ""):
+    """Бросает ValueError если окно превышает MAX_IIKO_DATE_WINDOW_DAYS. Без чанкования."""
+    start = _to_date(date_from)
+    end = _to_date(date_to)
+    if start > end:
+        raise ValueError(f"{label}: date_from > date_to ({start} > {end})")
+    diff = (end - start).days
+    if diff > MAX_IIKO_DATE_WINDOW_DAYS:
+        raise ValueError(
+            f"{label}: окно {diff} дней превышает лимит iiko "
+            f"({MAX_IIKO_DATE_WINDOW_DAYS} дней). Уменьшите диапазон."
+        )
+
+
 class IikoApiType(Enum):
     CLOUD = "cloud"
     CLOUD_OLD = "cloud_old"
@@ -79,9 +137,12 @@ class IikoService:
 
     async def _get_cloud_token(self) -> Optional[str]:
         """Получение токена для Cloud API"""
+        if config.IIKO_REQUESTS_DISABLED:
+            logger.warning("[IIKO_DISABLED] Cloud token request пропущен (IIKO_REQUESTS_DISABLED=true)")
+            return None
         if self.cloud_token and self.cloud_token_expires and datetime.now() < self.cloud_token_expires:
             return self.cloud_token
-            
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
@@ -107,6 +168,9 @@ class IikoService:
 
     async def _get_cloud_old_token(self) -> Optional[str]:
         """Получение токена для Cloud API (старый ключ — для заказов)"""
+        if config.IIKO_REQUESTS_DISABLED:
+            logger.warning("[IIKO_DISABLED] Cloud OLD token request пропущен (IIKO_REQUESTS_DISABLED=true)")
+            return None
         logger.info(f"[OLD TOKEN] Используется apiLogin (IIKO_OLD_LOGIN_KEY): '{self.cloud_old_login}'")
         if self.cloud_old_token and self.cloud_old_token_expires and datetime.now() < self.cloud_old_token_expires:
             logger.info(f"[OLD TOKEN] Используем кэшированный токен (первые 10 символов): '{self.cloud_old_token[:10]}...'")
@@ -134,9 +198,12 @@ class IikoService:
 
     async def _get_server_token(self) -> Optional[str]:
         """Получение токена для Server API"""
+        if config.IIKO_REQUESTS_DISABLED:
+            logger.warning("[IIKO_DISABLED] Server token request пропущен (IIKO_REQUESTS_DISABLED=true)")
+            return None
         if self.server_token and self.server_token_expires and datetime.now() < self.server_token_expires:
             return self.server_token
-            
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(
@@ -161,16 +228,71 @@ class IikoService:
             logger.error(f"Ошибка получения Server API токена: {e}")
             return None
 
+    @staticmethod
+    def _check_olap_date_window(report_data: Dict[Any, Any]) -> None:
+        """Проверяет, что все date-фильтры OLAP-запроса укладываются в 60 дней.
+
+        Бросает ValueError, если хоть один фильтр шире — задача вызывающего
+        решить, как реагировать (raise / log).
+        """
+        filters = report_data.get("filters") if isinstance(report_data, dict) else None
+        if not isinstance(filters, dict):
+            return
+        # iiko OLAP'у мы знакомо передаём как минимум эти ключи дат:
+        date_filter_keys = (
+            "DateTime.DateTyped",        # дата создания транзакции
+            "DateSecondary.DateTyped",   # дата редактирования транзакции
+            "OpenDate.Typed",            # дата открытия заказа (sales)
+            "CloseDate.Typed",
+        )
+        for key in date_filter_keys:
+            f = filters.get(key)
+            if not isinstance(f, dict):
+                continue
+            f_from = f.get("from")
+            f_to = f.get("to")
+            if not f_from or not f_to:
+                continue
+            try:
+                d_from = _to_date(f_from)
+                d_to = _to_date(f_to)
+            except Exception:
+                continue
+            diff = (d_to - d_from).days
+            if diff > MAX_IIKO_DATE_WINDOW_DAYS:
+                raise ValueError(
+                    f"OLAP filter {key!r}: окно {diff} дней > {MAX_IIKO_DATE_WINDOW_DAYS}. "
+                    f"from={f_from}, to={f_to}. "
+                    f"Используйте чанкование по дням (см. iter_day_chunks)."
+                )
+
     async def _make_request(
-        self, 
-        api_type: IikoApiType, 
-        endpoint: str, 
+        self,
+        api_type: IikoApiType,
+        endpoint: str,
         method: str = "GET",
         data: Optional[Dict[Any, Any]] = None,
         params: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[Any, Any]]:
         """Универсальный метод для запросов к iiko API"""
-        
+
+        if config.IIKO_REQUESTS_DISABLED:
+            logger.warning(
+                f"[IIKO_DISABLED] Запрос к iiko пропущен (IIKO_REQUESTS_DISABLED=true): "
+                f"api_type={api_type.value}, endpoint={endpoint}, method={method}"
+            )
+            return None
+
+        # Guardrail: для OLAP-запросов сверяем, что окно дат в filters не превышает 60 дней.
+        # Это safety net — если кто-то добавит новый OLAP-метод и забудет про чанкование,
+        # мы поймаем это до того, как iiko снова жалуется на нехватку памяти (см. task 6).
+        if endpoint == "/resto/api/v2/reports/olap" and isinstance(data, dict):
+            try:
+                self._check_olap_date_window(data)
+            except ValueError as e:
+                logger.error(f"[OLAP guardrail] BLOCKED: {e}. endpoint={endpoint}")
+                raise
+
         # Добавляем задержку для предотвращения rate limiting
         await self._add_request_delay(api_type)
         
@@ -269,6 +391,117 @@ class IikoService:
             )
             logger.debug(f"Traceback для ошибки:\n{traceback.format_exc()}")
             return None
+
+    async def wait_command(
+        self,
+        organization_id: str,
+        correlation_id: str,
+        *,
+        command_label: str = "iiko command",
+        timeout: float = 15.0,
+        interval: float = 0.5,
+        notify_on_failure: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Поллит /api/1/commands/status пока state не станет финальным
+        (Success/Error) или не сработает timeout.
+
+        Cloud-команды iiko асинхронные: первый ответ /order/* лишь подтверждает
+        приём, реальный результат приходит позже. Без поллинга мы не видели,
+        что часть команд падает на стороне iiko (см. task 9.1).
+
+        Никогда не поднимает исключений: при Error/Timeout/транспорте возвращает
+        dict с полем state и шлёт alert в Telegram (notify_on_failure).
+        """
+        from utils.telegram_notify import send_telegram_alert
+
+        deadline = time.monotonic() + timeout
+        last_response: Optional[Dict[Any, Any]] = None
+        attempts = 0
+
+        while True:
+            attempts += 1
+            resp = await self._make_request(
+                api_type=IikoApiType.CLOUD,
+                endpoint="/api/1/commands/status",
+                method="POST",
+                data={"organizationId": organization_id, "correlationId": correlation_id},
+            )
+
+            if not isinstance(resp, dict):
+                logger.error(
+                    f"[wait_command] {command_label}: пустой/невалидный ответ commands/status, "
+                    f"correlation_id={correlation_id}, attempt={attempts}"
+                )
+                if notify_on_failure:
+                    await send_telegram_alert(
+                        f"<b>[Грузин]</b> iiko poll TRANSPORT FAIL\n"
+                        f"command: {command_label}\n"
+                        f"correlationId: <code>{correlation_id}</code>\n"
+                        f"orgId: <code>{organization_id}</code>"
+                    )
+                return {
+                    "state": "TransportError",
+                    "correlationId": correlation_id,
+                    "raw": resp,
+                }
+
+            last_response = resp
+            state = resp.get("state")
+
+            if state == "Success":
+                logger.info(
+                    f"[wait_command] {command_label}: Success "
+                    f"(correlation_id={correlation_id}, attempts={attempts})"
+                )
+                return {"state": "Success", "correlationId": correlation_id, "raw": resp}
+
+            if state == "Error":
+                exception_info = resp.get("exception") or {}
+                err_msg = (
+                    exception_info.get("message")
+                    or exception_info.get("description")
+                    or str(exception_info)
+                    or "iiko returned state=Error"
+                )
+                logger.error(
+                    f"[wait_command] {command_label}: ERROR "
+                    f"(correlation_id={correlation_id}): {err_msg}"
+                )
+                if notify_on_failure:
+                    await send_telegram_alert(
+                        f"<b>[Грузин]</b> iiko {command_label} FAILED\n"
+                        f"correlationId: <code>{correlation_id}</code>\n"
+                        f"orgId: <code>{organization_id}</code>\n"
+                        f"error: {err_msg}"
+                    )
+                return {
+                    "state": "Error",
+                    "correlationId": correlation_id,
+                    "exception": exception_info,
+                    "raw": resp,
+                }
+
+            # state in ("InProgress", None, unknown) → ждём, проверяем deadline
+            if time.monotonic() >= deadline:
+                logger.warning(
+                    f"[wait_command] {command_label}: TIMEOUT after {timeout}s "
+                    f"(correlation_id={correlation_id}, last state={state}, attempts={attempts})"
+                )
+                if notify_on_failure:
+                    await send_telegram_alert(
+                        f"<b>[Грузин]</b> iiko {command_label} TIMEOUT {timeout}s\n"
+                        f"correlationId: <code>{correlation_id}</code>\n"
+                        f"orgId: <code>{organization_id}</code>\n"
+                        f"last state: {state}"
+                    )
+                return {
+                    "state": "Timeout",
+                    "correlationId": correlation_id,
+                    "raw": last_response,
+                }
+
+            await asyncio.sleep(interval)
 
     # Cloud API методы
     async def get_cloud_organizations(self) -> Optional[List[Dict[Any, Any]]]:
@@ -638,15 +871,28 @@ class IikoService:
             
             return all_terminals
 
-    async def get_cloud_orders_by_table(self, organization_id: Optional[str] = None, table_id: str = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение заказов по столу (Cloud API)"""
-        if not organization_id or not table_id:
+    async def get_cloud_orders_by_table(
+        self,
+        organization_ids: Optional[List[str]] = None,
+        table_ids: Optional[List[str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """POST /api/1/order/by_table — заказы по столам (Cloud API).
+
+        iiko требует множественные `organizationIds` + `tableIds` (research 2026-05-28,
+        task 9.3): single-форма даёт HTTP 400 INVALID_BODY_JSON_FORMAT. Batched-форма
+        позволяет дёрнуть все столы одной точки одним запросом.
+
+        Возвращает `{correlationId, orders: [...]}` или None при транспортной ошибке.
+        Внимание: `by_table` НЕ показывает iikoFront-заказы без предварительного
+        `init_by_table` (см. task_9_3_research_2026_05_28.md).
+        """
+        if not organization_ids or not table_ids:
             return None
         return await self._make_request(
             IikoApiType.CLOUD,
             "/api/1/order/by_table",
             method="POST",
-            data={"organizationId": organization_id, "tableId": table_id}
+            data={"organizationIds": organization_ids, "tableIds": table_ids},
         )
 
     # Server API методы
@@ -953,57 +1199,105 @@ class IikoService:
         )
 
     async def get_transactions(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение транзакций (Server API) для заданного периода"""
-        
-        params = data_frames.iiko_transactions_data_frame.copy()
-        # Форматируем даты в YYYY-MM-DD (без времени)
-        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
-        params["filters"]["DateTime.DateTyped"]["from"] = from_date.strftime('%Y-%m-%d')
-        params["filters"]["DateTime.DateTyped"]["to"] = to_date.strftime('%Y-%m-%d')
-        result = await self.get_server_transactions_report(params)
-        if result and "data" in result:
-            logger.info(f"Получено транзакций за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}: {len(result['data'])}")
-            return result["data"]
-        return None
+        """Получение транзакций (Server API) за период. Разбивается по дням."""
+        if not from_date or not to_date:
+            logger.warning("Не указаны даты для получения транзакций")
+            return None
+
+        assert_iiko_date_window(from_date, to_date, "get_transactions")
+
+        all_transactions = []
+        current_date = from_date.date()
+        end_date = to_date.date()
+
+        logger.info(f"Начало получения транзакций: разбивка на дни с {current_date} по {end_date}")
+
+        while current_date <= end_date:
+            day_start = datetime.combine(current_date, datetime.min.time())
+            day_end = datetime.combine(current_date + timedelta(days=1), datetime.min.time())
+
+            try:
+                params = data_frames.iiko_transactions_data_frame.copy()
+                # iiko API использует полуоткрытый интервал [from, to)
+                params["filters"]["DateTime.DateTyped"]["from"] = day_start.strftime('%Y-%m-%d')
+                params["filters"]["DateTime.DateTyped"]["to"] = day_end.strftime('%Y-%m-%d')
+
+                result = await self.get_server_transactions_report(params)
+                if result and "data" in result:
+                    all_transactions.extend(result["data"])
+                    logger.debug(f"Получено {len(result['data'])} транзакций за {current_date}")
+                else:
+                    logger.warning(f"Не получено данных транзакций за {current_date}")
+            except Exception as e:
+                logger.error(f"Ошибка при получении транзакций за {current_date}: {e}")
+                logger.debug(f"Traceback для ошибки за {current_date}:\n{traceback.format_exc()}")
+
+            current_date += timedelta(days=1)
+
+        logger.info(f"Всего получено {len(all_transactions)} транзакций за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}")
+        return all_transactions if all_transactions else None
 
     async def get_sales(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Optional[List[Dict[Any, Any]]]:
-        """Получение продаж (Server API) для заданного периода"""
+        """Получение продаж (Server API) за период. Разбивается по дням."""
+        if not from_date or not to_date:
+            logger.warning("Не указаны даты для получения продаж")
+            return None
 
-        params = data_frames.iiko_sales_data_frame.copy()
-        # Форматируем даты в YYYY-MM-DD (без времени)
-        # iiko API использует полуоткрытый интервал [from, to) - включая from, не включая to
-        params["filters"]["OpenDate.Typed"]["from"] = from_date.strftime('%Y-%m-%d')
-        params["filters"]["OpenDate.Typed"]["to"] = to_date.strftime('%Y-%m-%d')
-        result = await self.get_server_sales_report(params)
-        
-        if result and "data" in result:
-            logger.info(f"Получено продаж за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}: {len(result['data'])}")
-            return result["data"]
-        return None
+        assert_iiko_date_window(from_date, to_date, "get_sales")
+
+        all_sales = []
+        current_date = from_date.date()
+        end_date = to_date.date()
+
+        logger.info(f"Начало получения продаж: разбивка на дни с {current_date} по {end_date}")
+
+        while current_date <= end_date:
+            day_start = datetime.combine(current_date, datetime.min.time())
+            day_end = datetime.combine(current_date + timedelta(days=1), datetime.min.time())
+
+            try:
+                params = data_frames.iiko_sales_data_frame.copy()
+                # iiko API использует полуоткрытый интервал [from, to)
+                params["filters"]["OpenDate.Typed"]["from"] = day_start.strftime('%Y-%m-%d')
+                params["filters"]["OpenDate.Typed"]["to"] = day_end.strftime('%Y-%m-%d')
+
+                result = await self.get_server_sales_report(params)
+                if result and "data" in result:
+                    all_sales.extend(result["data"])
+                    logger.debug(f"Получено {len(result['data'])} продаж за {current_date}")
+                else:
+                    logger.warning(f"Не получено данных продаж за {current_date}")
+            except Exception as e:
+                logger.error(f"Ошибка при получении продаж за {current_date}: {e}")
+                logger.debug(f"Traceback для ошибки за {current_date}:\n{traceback.format_exc()}")
+
+            current_date += timedelta(days=1)
+
+        logger.info(f"Всего получено {len(all_sales)} продаж за период с {from_date.strftime('%Y-%m-%d')} по {to_date.strftime('%Y-%m-%d')}")
+        return all_sales if all_sales else None
 
     async def get_transactions_by_modification_date(self, from_date: Optional[datetime] = None, to_date: Optional[datetime] = None) -> Optional[List[Dict[Any, Any]]]:
         """
         Получение транзакций, измененных за период (по DateSecondary.DateTyped).
         Оптимизировано: разбивает запрос на запросы по дням для избежания таймаутов.
-        
-        Логика:
-        - DateSecondary.DateTyped - дата редактирования транзакции (разбиваем по дням)
-        - DateTime.DateTyped - дата создания транзакции (используем весь период от 3 месяцев назад до сегодня)
         """
         if not from_date or not to_date:
             logger.warning("Не указаны даты для получения транзакций по дате изменения")
             return None
-        
+
+        assert_iiko_date_window(from_date, to_date, "get_transactions_by_modification_date")
+
         all_transactions = []
         current_date = from_date.date()
         end_date = to_date.date()
-        
-        # Фильтр по дате создания транзакции - используем период от 3 месяцев назад до to_date включительно
-        date_created_from = (to_date - timedelta(days=90)).strftime('%Y-%m-%d')
+
+        # Фильтр по дате создания транзакции — окно 60 дней (iiko: лимит 65 дней по памяти "открытого периода").
+        # Этим окном защищаем iiko OLAP от перегруза. Правки на транзакции старше 60 дней этим синком не ловятся.
+        date_created_from = (to_date - timedelta(days=60)).strftime('%Y-%m-%d')
         date_created_to = (to_date + timedelta(days=1)).strftime('%Y-%m-%d')  # +1 день для включения последнего дня
-        
+
         logger.info(f"Начало получения транзакций по дате изменения: разбивка на дни с {current_date} по {end_date}")
-        logger.info(f"Фильтр по дате создания транзакции: с {date_created_from} по {date_created_to} (весь период)")
+        logger.info(f"Фильтр по дате создания транзакции: с {date_created_from} по {date_created_to} (окно 60 дней)")
         
         # Разбиваем период на дни и делаем запросы по каждому дню
         while current_date <= end_date:
@@ -1022,7 +1316,7 @@ class IikoService:
                 params["filters"]["DateSecondary.DateTyped"]["includeLow"] = True
                 params["filters"]["DateSecondary.DateTyped"]["includeHigh"] = is_last_day  # Включаем последний день
                 
-                # Фильтр по дате создания транзакции (DateTime.DateTyped) - используем весь период
+                # Фильтр по дате создания транзакции (DateTime.DateTyped) - окно 60 дней
                 params["filters"]["DateTime.DateTyped"]["from"] = date_created_from
                 params["filters"]["DateTime.DateTyped"]["to"] = date_created_to
                 params["filters"]["DateTime.DateTyped"]["includeLow"] = True
@@ -1098,7 +1392,16 @@ class IikoService:
         )
 
     async def get_server_product_expense_report(self, department: str, date_from: str, date_to: str) -> Optional[Dict[Any, Any]]:
-        """Получение отчета по расходу продуктов (Server API)"""
+        """Получение отчета по расходу продуктов (Server API).
+
+        Аггрегированный отчёт за период, не чанкуется по дням (потеряет агрегацию).
+        Окно ограничено MAX_IIKO_DATE_WINDOW_DAYS, чтобы не уронить iiko по памяти.
+        """
+        try:
+            assert_iiko_date_window(date_from, date_to, label="get_server_product_expense_report")
+        except ValueError as e:
+            logger.error(str(e))
+            return None
         params = {
             "department": department,
             "dateFrom": date_from,
@@ -1281,74 +1584,75 @@ class IikoService:
         """Получение окладов (только Server API)"""
         return await self.get_server_salaries()
 
+    async def _get_server_shifts_one_day(
+        self, day_from: str, day_to: str, employee_id: Optional[str], token: str
+    ) -> Optional[List[Dict[Any, Any]]]:
+        """Один-дневный запрос смен (XML). Возвращает list или None при ошибке."""
+        try:
+            params_with_key = {"key": token, "from": day_from, "to": day_to}
+            if employee_id:
+                params_with_key["employeeId"] = employee_id
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.server_base_url}/resto/api/employees/attendance"
+                response = await client.get(url, params=params_with_key)
+                if response.status_code == 200:
+                    return await self._parse_xml_shifts(response.text)
+                logger.error(
+                    f"HTTP ошибка server API при получении смен {day_from}: "
+                    f"{response.status_code} - {response.text[:200]}"
+                )
+                return None
+        except Exception as e:
+            logger.error(f"Ошибка запроса смен за {day_from}: {e}")
+            return None
+
     async def get_server_shifts(
-        self, 
-        date_from: Optional[str] = None, 
+        self,
+        date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         employee_id: Optional[str] = None
     ) -> Optional[List[Dict[Any, Any]]]:
         """
-        Получение данных о сменах сотрудников (Server API)
-        
+        Получение данных о сменах сотрудников (Server API) — чанкуется по дням,
+        максимальное окно — MAX_IIKO_DATE_WINDOW_DAYS дней.
+
         Args:
             date_from: Дата начала периода в формате YYYY-MM-DD
             date_to: Дата конца периода в формате YYYY-MM-DD
             employee_id: ID сотрудника (опционально)
-        
+
         Returns:
-            Список смен сотрудников
+            Список смен сотрудников (объединённый по всем дням периода)
         """
-        # dateFrom и dateTo обязательны для iiko Server API - проверяем ДО получения токена
         if not date_from:
-            # Если не указано, используем сегодня
-            from datetime import datetime
             date_from = datetime.now().strftime("%Y-%m-%d")
         if not date_to:
-            # Если не указано, используем сегодня
-            from datetime import datetime
             date_to = datetime.now().strftime("%Y-%m-%d")
-        
-        # Получаем токен
+
         token = await self._get_server_token()
         if not token:
             logger.error("Не удалось получить токен для Server API")
             return None
-        
+
+        all_shifts: List[Dict[Any, Any]] = []
         try:
-            # Формируем параметры запроса - from и to обязательны (не dateFrom/dateTo!)
-            params = {
-                "from": date_from,
-                "to": date_to
-            }
-            
-            if employee_id:
-                params["employeeId"] = employee_id
-            
-            logger.debug(f"Запрос смен: from={date_from}, to={date_to}, employeeId={employee_id}")
-            
-            # Используем прямой запрос, так как API возвращает XML, а не JSON
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                url = f"{self.server_base_url}/resto/api/employees/attendance"
-                params_with_key = {"key": token}
-                params_with_key.update(params)
-                
-                logger.debug(f"Запрос смен: URL={url}, from={date_from}, to={date_to}")
-                response = await client.get(url, params=params_with_key)
-                
-                if response.status_code == 200:
-                    # Server API возвращает XML
-                    xml_content = response.text
-                    logger.debug(f"Получен XML ответ длиной {len(xml_content)} символов")
-                    return await self._parse_xml_shifts(xml_content)
-                else:
-                    logger.error(f"HTTP ошибка server API при получении смен: {response.status_code} - {response.text}")
-                    return None
-                    
-        except Exception as e:
-            logger.error(f"Ошибка запроса к server API для получения смен: {e}")
-            import traceback
-            logger.debug(f"Traceback: {traceback.format_exc()}")
+            chunks = list(iter_day_chunks(date_from, date_to))
+        except ValueError as e:
+            logger.error(f"get_server_shifts: невалидный диапазон: {e}")
             return None
+
+        logger.info(f"Запрос смен: разбивка на {len(chunks)} дн. с {date_from} по {date_to}")
+        for day_start, day_end_exclusive in chunks:
+            day_from_str = day_start.strftime("%Y-%m-%d")
+            day_to_str = day_start.strftime("%Y-%m-%d")  # iiko shifts: from==to для одного дня
+            shifts = await self._get_server_shifts_one_day(
+                day_from_str, day_to_str, employee_id, token
+            )
+            if shifts:
+                all_shifts.extend(shifts)
+
+        logger.info(f"Получено {len(all_shifts)} смен за период {date_from} — {date_to}")
+        return all_shifts if all_shifts else None
 
     async def _parse_xml_shifts(self, xml_content: str) -> Optional[List[Dict[Any, Any]]]:
         """Парсинг XML ответа со сменами"""
@@ -1409,18 +1713,8 @@ class IikoService:
         date_to: str,
         status: Optional[str] = None
     ) -> Optional[Dict[Any, Any]]:
-        """
-        Получение актов списания (Server API).
-        Запросы разбиваются по одному дню для предотвращения таймаутов.
-
-        Args:
-            date_from: Начало временного интервала в формате "yyyy-MM-dd"
-            date_to: Конец временного интервала в формате "yyyy-MM-dd"
-            status: Статус документа (опционально)
-
-        Returns:
-            Словарь {"response": [список документов]}
-        """
+        """Получение актов списания (Server API). Разбивается по дням."""
+        assert_iiko_date_window(date_from, date_to, "get_writeoff_documents")
         try:
             token = await self._get_server_token()
             if not token:
@@ -2087,17 +2381,8 @@ class IikoService:
         date_from: str,
         date_to: str
     ) -> Optional[List[Dict[Any, Any]]]:
-        """
-        Получение приходных накладных (Server API).
-        Запросы разбиваются по одному дню для предотвращения таймаутов.
-
-        Args:
-            date_from: Начало временного интервала в формате "yyyy-MM-dd"
-            date_to: Конец временного интервала в формате "yyyy-MM-dd"
-
-        Returns:
-            Список словарей с данными приходных накладных
-        """
+        """Получение приходных накладных (Server API). Разбивается по дням."""
+        assert_iiko_date_window(date_from, date_to, "get_incoming_invoices")
         try:
             token = await self._get_server_token()
             if not token:
@@ -2151,17 +2436,8 @@ class IikoService:
         date_from: str,
         date_to: str
     ) -> Optional[List[Dict[Any, Any]]]:
-        """
-        Получение расходных накладных (Server API).
-        Запросы разбиваются по одному дню для предотвращения таймаутов.
-
-        Args:
-            date_from: Начало временного интервала в формате "yyyy-MM-dd"
-            date_to: Конец временного интервала в формате "yyyy-MM-dd"
-
-        Returns:
-            Список словарей с данными расходных накладных
-        """
+        """Получение расходных накладных (Server API). Разбивается по дням."""
+        assert_iiko_date_window(date_from, date_to, "get_outgoing_invoices")
         try:
             token = await self._get_server_token()
             if not token:
@@ -2600,7 +2876,14 @@ class IikoService:
                 else:
                     # Пробуем атрибут code
                     store_data['code'] = store_elem.get('code')
-                
+
+                # parentId — iiko_id департамента-владельца (для маппинга в organization)
+                parent_elem = store_elem.find('parentId')
+                if parent_elem is not None:
+                    store_data['parent_id'] = parent_elem.text
+                else:
+                    store_data['parent_id'] = store_elem.get('parentId')
+
                 # Если id не найден, пробуем использовать text элемента или другие варианты
                 if not store_data['id']:
                     # Пробуем использовать text самого элемента
@@ -2804,30 +3087,48 @@ class IikoService:
         include_deleted: bool = False
     ) -> Optional[List[Dict[Any, Any]]]:
         """
-        Получение платежных ведомостей (Server API)
-        
+        Получение платежных ведомостей (Server API) — чанкуется по дням,
+        максимальное окно — MAX_IIKO_DATE_WINDOW_DAYS дней.
+
         Args:
             date_from: Начало периода в формате yyyy-MM-dd, включительно
             date_to: Окончание периода в формате yyyy-MM-dd, включительно
             department: UUID торгового предприятия (опционально)
             include_deleted: Включать ли удаленные ведомости
-        
+
         Returns:
-            Список платежных ведомостей
+            Список платежных ведомостей (объединённый по всем дням)
         """
-        params = {
-            "dateFrom": date_from,
-            "dateTo": date_to,
-            "includeDeleted": str(include_deleted).lower()
-        }
-        if department:
-            params["department"] = department
-        
-        return await self._make_request(
-            IikoApiType.SERVER,
-            "/resto/api/v2/payrolls/list",
-            params=params
-        )
+        try:
+            chunks = list(iter_day_chunks(date_from, date_to))
+        except ValueError as e:
+            logger.error(f"get_payrolls: невалидный диапазон: {e}")
+            return None
+
+        all_payrolls: List[Dict[Any, Any]] = []
+        logger.info(f"Запрос payrolls: разбивка на {len(chunks)} дн. с {date_from} по {date_to}")
+        for day_start, _day_end_exclusive in chunks:
+            day_str = day_start.strftime("%Y-%m-%d")
+            params = {
+                "dateFrom": day_str,
+                "dateTo": day_str,  # iiko payrolls: оба включительно, на один день оба равны
+                "includeDeleted": str(include_deleted).lower(),
+            }
+            if department:
+                params["department"] = department
+            try:
+                result = await self._make_request(
+                    IikoApiType.SERVER,
+                    "/resto/api/v2/payrolls/list",
+                    params=params,
+                )
+                if result and isinstance(result, list):
+                    all_payrolls.extend(result)
+            except Exception as e:
+                logger.error(f"Ошибка при получении payrolls за {day_str}: {e}")
+
+        logger.info(f"Получено {len(all_payrolls)} payrolls за период {date_from} — {date_to}")
+        return all_payrolls if all_payrolls else None
 
     async def create_pay_out(self, pay_out_data: Dict[str, Any]) -> Optional[Dict[Any, Any]]:
         """

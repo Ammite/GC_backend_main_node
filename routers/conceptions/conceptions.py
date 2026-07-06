@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import logging
 
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from models import Conception, Supplier
 from schemas.reference import (
@@ -29,7 +29,7 @@ router_suppliers = APIRouter(prefix="", tags=["suppliers"])
 @router.post("/conceptions/sync", response_model=SyncConceptionsResponse)
 async def sync_conceptions_endpoint(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Владелец")),
 ):
     """
     Синхронизировать концепции из iiko Server API.
@@ -58,7 +58,7 @@ def get_conceptions_endpoint(
         default=None, description="Фильтр по активности (если поле используется)"
     ),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить список всех концепций.
@@ -88,7 +88,7 @@ def get_conceptions_endpoint(
 @router_suppliers.post("/suppliers/sync", response_model=SyncSuppliersResponse)
 async def sync_suppliers_endpoint(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Владелец")),
 ):
     """
     Синхронизировать поставщиков из iiko Server API.
@@ -114,7 +114,7 @@ async def sync_suppliers_endpoint(
 @router_suppliers.get("/suppliers", response_model=SupplierListResponse)
 def get_suppliers_endpoint(
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить список всех поставщиков.

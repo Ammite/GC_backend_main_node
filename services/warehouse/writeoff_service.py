@@ -218,7 +218,26 @@ async def create_writeoff_document_in_iiko(
                 "iiko_id": None,
                 "document_id": None
             }
-        
+
+        # Явная проверка iiko-валидации: если iiko вернул valid=false — НЕ коммитим в БД.
+        # Без этой проверки ошибка iiko молча проглатывалась, документ в нашу БД попадал, в iiko — нет.
+        if isinstance(iiko_response, dict) and iiko_response.get("valid") is False:
+            error_msg = (
+                iiko_response.get("errorMessage")
+                or iiko_response.get("error")
+                or iiko_response.get("message")
+                or "iiko вернул valid=false"
+            )
+            logger.warning(
+                f"iiko отклонил акт списания: {error_msg} | response={iiko_response}"
+            )
+            return {
+                "success": False,
+                "message": f"iiko отклонил акт списания: {error_msg}",
+                "iiko_id": None,
+                "document_id": None,
+            }
+
         # Извлекаем ID созданного документа из ответа
         # Структура ответа может быть разной, проверяем несколько вариантов
         iiko_id = None
@@ -230,10 +249,21 @@ async def create_writeoff_document_in_iiko(
                     iiko_id = response_data.get("id") or response_data.get("documentId")
                 elif isinstance(response_data, list) and response_data:
                     iiko_id = response_data[0].get("id") or response_data[0].get("documentId")
-        
+
+        # Если iiko НЕ подтвердил создание (нет ни iiko_id, ни явного valid=true) — не сохраняем локально.
+        if not iiko_id and not (isinstance(iiko_response, dict) and iiko_response.get("valid") is True):
+            logger.warning(
+                f"iiko не подтвердил создание акта списания (нет id и нет valid=true): {iiko_response}"
+            )
+            return {
+                "success": False,
+                "message": "iiko не подтвердил создание акта списания (нет id и нет valid=true)",
+                "iiko_id": None,
+                "document_id": None,
+            }
+
         if not iiko_id:
-            logger.warning(f"Не удалось извлечь iiko_id из ответа: {iiko_response}")
-            # Все равно сохраняем документ в БД, но без iiko_id
+            logger.info(f"iiko_id не пришёл, но valid=true — сохраняем без iiko_id. response={iiko_response}")
         
         # Сохраняем документ в локальную БД
         # Если iiko_id не получен, используем None (unique constraint позволяет NULL)

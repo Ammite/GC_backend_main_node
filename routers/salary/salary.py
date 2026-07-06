@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_self_or_role
 from database.database import get_db
 from services.salary.salary_service import calculate_waiter_salary, get_waiter_daily_sales
 from schemas.salary import SalaryResponse, WaiterSalesResponse
@@ -19,7 +19,7 @@ def get_waiter_salary(
     date: str = Query(..., description="Дата в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Получить зарплату официанта за день
@@ -60,7 +60,7 @@ def get_waiter_sales_today(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Получить сумму продаж официанта за день и количество чеков.

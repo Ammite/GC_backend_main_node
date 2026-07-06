@@ -19,6 +19,7 @@ from models import (
     Expense, WarehouseDocument, WarehouseDocumentItem,
     Department, Conception, Supplier, Store, Account,
     DailyAnalytics, DailyEmployeeAnalytics, MenuCategory,
+    WaiterSalesPercent,
 )
 from utils.security import hash_password, create_access_token, get_current_user
 

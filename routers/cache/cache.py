@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from utils.cache import invalidate_cache, get_cache_stats
 import logging
 
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/cache", tags=["cache"])
 
 @router.get("/stats")
 def get_cache_statistics(
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Получить статистику по кэшу
@@ -39,7 +39,7 @@ def get_cache_statistics(
 @router.post("/clear")
 def clear_cache(
     pattern: str = "",
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Очистить кэш

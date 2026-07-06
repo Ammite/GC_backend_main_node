@@ -1,0 +1,9 @@
+{
+  "value": {
+    "expenses_amount": 0.0,
+    "data": []
+  },
+  "created_at": "2026-07-04T10:39:28.303429",
+  "expires_at": "2026-07-04T10:49:28.303441",
+  "ttl_seconds": 600
+}

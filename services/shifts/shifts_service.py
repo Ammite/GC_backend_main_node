@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, distinct
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from models.shifts import Shift
@@ -11,6 +11,7 @@ from models.penalty import Penalty
 from models.rewards import Reward
 from models.user_reward import UserReward
 from models.organization import Organization
+from models.sales import Sales
 from schemas.shifts import ShiftResponse, ShiftStatusResponse
 from services.iiko.iiko_service import IikoService, IikoApiType
 import logging
@@ -184,14 +185,38 @@ def get_waiter_shift_status(
     
     if not shift:
         return ShiftStatusResponse(isActive=False)
-    
+
     # Смена активна (end_time is NULL)
     elapsed_time = calculate_elapsed_time(shift.start_time)
+
+    # Заказы официанта за эту смену: от start_time до сейчас.
+    # Используем open_time (DATETIME), а не open_date_typed (DATE) — иначе чеки,
+    # открытые после shift.start_time, но в тот же день, обрезаются до полуночи и
+    # не попадают в выборку.
+    sales_agg = (
+        db.query(
+            func.count(distinct(Sales.order_id)).label("sales_number"),
+            func.coalesce(func.sum(Sales.dish_discount_sum_int), 0).label("sales_total"),
+        )
+        .filter(
+            and_(
+                Sales.order_waiter_id == employee.iiko_id,
+                Sales.open_time >= shift.start_time,
+                Sales.order_id.isnot(None),
+                Sales.order_deleted != "DELETED",
+                Sales.cashier != "Удаление позиций",
+            )
+        )
+        .first()
+    )
+
     return ShiftStatusResponse(
         isActive=True,
         shiftId=str(shift.id),
         startTime=shift.start_time.strftime("%H:%M"),
-        elapsedTime=elapsed_time
+        elapsedTime=elapsed_time,
+        sales_number=int(sales_agg.sales_number or 0) if sales_agg else 0,
+        sales_total=float(sales_agg.sales_total or 0) if sales_agg else 0.0,
     )
 
 

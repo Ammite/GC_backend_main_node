@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.employees.employees_service import get_employees, get_employees_summary, get_employee_summary, get_employee_details, get_employee_open_check, get_employee_closed_tables_history, create_users_for_all_employees, regenerate_user_logins, recreate_all_credentials
 from schemas.employees import EmployeeArrayResponse, EmployeeWithShiftsArrayResponse, EmployeesSummaryResponse, EmployeeSummaryResponse, EmployeeDetailsResponse, EmployeeOpenCheckResponse, EmployeeClosedTablesHistoryResponse
@@ -35,7 +35,7 @@ def list_employees(
     limit: int = Query(default=100, ge=0, le=5000, description="Количество записей. 0 = все записи без ограничения"),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список сотрудников
@@ -63,7 +63,7 @@ def list_employees(
 def create_fine(
     fine_data: CreateFineRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать штраф для сотрудника
@@ -120,7 +120,7 @@ def update_employee_shift_time(
     employee_id: int = Path(..., description="ID сотрудника"),
     shift_data: UpdateShiftTimeRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Обновить время смены сотрудника
@@ -177,7 +177,7 @@ def get_employees_summary_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить сводку по сотрудникам - количество сотрудников с открытой смены и их сумма чеков
@@ -209,7 +209,7 @@ def get_employee_summary_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить сводку по конкретному сотруднику - имя фамилия сотрудника, длительность смены и сумма
@@ -250,7 +250,7 @@ def get_employee_details_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить детали по одному сотруднику - длительность смены, сумма чеков и столы на которых открыты чеки
@@ -292,7 +292,7 @@ def get_employee_open_check_endpoint(
     dateTime: str = Query(..., description="Дата и время в формате ISO (YYYY-MM-DDTHH:mm:ssZ)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить детали открытого счета сотрудника - содержимое чека
@@ -334,7 +334,7 @@ def get_employee_closed_tables_history_endpoint(
     to_date: Optional[str] = Query(default=None, description="Дата конца периода в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Посмотреть историю закрытых столиков сотрудника - список чеков закрытых сотрудником и суммы
@@ -380,7 +380,7 @@ def get_fines_summary_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить сводку всех штрафов - список всех штрафов за текущий день
@@ -416,7 +416,7 @@ def update_fine_endpoint(
     fine_id: int = Path(..., description="ID штрафа"),
     fine_data: UpdateFineRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Изменить штраф сотруднику
@@ -456,7 +456,7 @@ def update_fine_endpoint(
 def delete_fine_endpoint(
     fine_id: int = Path(..., description="ID штрафа"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Удалить штраф сотрудника
@@ -482,7 +482,7 @@ def delete_fine_endpoint(
 @router.post("/employees/create-users")
 def create_users_for_employees_endpoint(
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Создать пользователей для всех сотрудников, у которых ещё нет учётной записи.
@@ -509,7 +509,7 @@ def create_users_for_employees_endpoint(
 @router.post("/employees/regenerate-logins")
 def regenerate_logins_endpoint(
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Перегенерировать логины всех пользователей на латиницу (кроме admin и ofik).

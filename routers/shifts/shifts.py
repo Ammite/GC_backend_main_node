@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role, require_self_or_role
 from database.database import get_db
 from models.user import User
 from models.employees import Employees
@@ -39,7 +39,7 @@ def get_shifts_endpoint(
     employee_id: Optional[int] = Query(default=None, description="ID сотрудника для фильтрации"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить информацию о смене
@@ -70,7 +70,7 @@ def get_waiter_shift_status_endpoint(
     waiter_id: int = Path(..., description="ID пользователя или сотрудника"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Проверить активность смены официанта.
@@ -96,7 +96,7 @@ async def start_waiter_shift(
     waiter_id: int = Path(..., description="ID пользователя или сотрудника"),
     organization_id: Optional[int] = Query(default=None, description="ID организации"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Запустить смену официанта.
@@ -136,7 +136,7 @@ async def end_waiter_shift(
     waiter_id: int = Path(..., description="ID пользователя или сотрудника"),
     organization_id: Optional[int] = Query(default=None, description="ID организации"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Завершить активную смену официанта.

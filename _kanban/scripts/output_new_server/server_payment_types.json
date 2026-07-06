@@ -1,0 +1,303 @@
+[
+  {
+    "rootType": "PaymentType",
+    "id": "08268d39-233f-4586-8144-4855f079d147",
+    "deleted": false,
+    "code": "GINT",
+    "name": "Glovo Интеграция безнал"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "303a5c9f-f6dc-4d9a-b034-fc1f05adb38f",
+    "deleted": false,
+    "code": "YINT",
+    "name": "Yandex Интеграция безнал"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "49bb8f0e-bd28-4691-b0dd-4e70e043386e",
+    "deleted": false,
+    "code": "",
+    "name": "БЦК ИП Шаяхметов"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "4f8081dd-1f85-68a5-6a55-8e6e67dc99d0",
+    "deleted": true,
+    "code": "",
+    "name": "Бонусы Plazius"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "5885c617-28bb-4891-bdad-465226a111ef",
+    "deleted": false,
+    "code": "",
+    "name": "Каспий банк ИП Амиржан"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "5998104c-824f-4f2f-96b4-76591f3814fb",
+    "deleted": false,
+    "code": "",
+    "name": "БЦК ИП Амиржан"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "6589989b-0b6f-4e5e-96c6-ff8b92a4d3fe",
+    "deleted": false,
+    "code": "",
+    "name": "Каспий банк ИП Шаяхметов"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "85574d49-c553-42a5-be60-9d0bdf9baeb8",
+    "deleted": false,
+    "code": "",
+    "name": "Каспий банк ИП Акжан"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "a5140533-0b89-4d8b-8ab1-201a0efc2aca",
+    "deleted": false,
+    "code": "",
+    "name": "Халык банк ИП Шаяхметов"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "bf57eac8-ec47-4e91-b0ef-da766ecdffb9",
+    "deleted": false,
+    "code": "",
+    "name": "Халык банк ИП Акжан"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "c5cef521-d6b4-481e-bcd3-4ed700dae271",
+    "deleted": false,
+    "code": "",
+    "name": "Сертификат"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "c6570423-c8c8-4e1f-9682-0968646879e8",
+    "deleted": false,
+    "code": "WINT",
+    "name": "WOLT Интеграция безнал"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "cb78fe2f-afeb-4aa1-b972-20f61d102b4c",
+    "deleted": false,
+    "code": "ONL",
+    "name": "Starter Интеграция безнал"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "d6630d7c-85be-a369-0ae1-5b461833b19b",
+    "deleted": true,
+    "code": "",
+    "name": "Мобильный платеж"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "eb13d262-c09e-4183-b159-221191e9f39f",
+    "deleted": false,
+    "code": "",
+    "name": "БЦК ИП Акжан"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "0c7e771e-77c0-4d19-8434-c7d80fd52fdd",
+    "deleted": false,
+    "code": "",
+    "name": "Перемещение на Лавку Одн посуда"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "28af25fa-740a-4bc7-b50f-c62283224001",
+    "deleted": false,
+    "code": "",
+    "name": "Перемещение с Лавки на кухню"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "4e610c08-1146-46c6-9896-6a80789ae91f",
+    "deleted": false,
+    "code": "",
+    "name": "Перемещение Фабрики"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "55a6f401-e85e-486c-bcbe-e93a105ff0cb",
+    "deleted": true,
+    "code": "",
+    "name": "Бракераж"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "69258db7-f99b-4e9b-bf14-99dae8ca586f",
+    "deleted": false,
+    "code": "",
+    "name": "Бракераж Ресторана"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "7727ce4c-ecb2-41fd-b312-2a14cf48d0f9",
+    "deleted": false,
+    "code": "",
+    "name": "Акт приготовления"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "aab9d35b-e0c1-46f7-8809-66fb5fcc2ad0",
+    "deleted": false,
+    "code": "",
+    "name": "Перемещение на Лавку"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "bdfc00ab-1f44-42c8-ba23-c98412418db0",
+    "deleted": false,
+    "code": "",
+    "name": "Перемещение Бар"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "62783ac6-04e3-4a00-b57b-7e18a7142193",
+    "deleted": true,
+    "code": "",
+    "name": "Раннее внесенная предоплата"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "68b78381-534f-424e-b88a-6fec245e9ac5",
+    "deleted": false,
+    "code": "",
+    "name": "Под зп сотрудникам"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "fb8985d5-75a1-4199-9ce7-cbe20edc3ce6",
+    "deleted": false,
+    "code": "",
+    "name": "Счет на оплату"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "31df9a20-969d-4d50-bbce-c352e79db66a",
+    "deleted": false,
+    "code": "",
+    "name": "Kaspi Рестораны1"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "ecf5f68b-8aad-4653-85b6-259d5af59b7c",
+    "deleted": true,
+    "code": "",
+    "name": "Kaspi Рестораны1111"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "20129add-c5e1-4432-8b96-9e8f46e980a6",
+    "deleted": false,
+    "code": "",
+    "name": "Отработка блюд"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "4cd54967-25d6-423d-9f4e-238be8140cbb",
+    "deleted": true,
+    "code": "",
+    "name": "Бракераж Ардана"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "568762c4-0d9a-4518-b541-daba10bb7b23",
+    "deleted": false,
+    "code": "",
+    "name": "Маркетинг Мила"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "5a02e8f6-d178-4d86-8ddf-3c9f9697c023",
+    "deleted": true,
+    "code": "",
+    "name": "Бракераж Светлана"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "6b56ba85-fd2e-4f90-92a2-6fbc22a53b1c",
+    "deleted": false,
+    "code": "",
+    "name": "Дегустация Сергей"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "7e087346-e4e7-4f45-a203-885a58723daa",
+    "deleted": false,
+    "code": "",
+    "name": "Акжан представительские"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "9e58d63d-bcb7-4056-9cc5-f63027dc7487",
+    "deleted": false,
+    "code": "",
+    "name": "Стафф питание"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "c931938b-2bef-4ba3-ab9e-6b5b258978a4",
+    "deleted": false,
+    "code": "",
+    "name": "Дегустация Ардана"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "d92fb88b-a3d6-427b-b890-4aadcf9bc6b8",
+    "deleted": true,
+    "code": "",
+    "name": "Дегустация Светлана"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "d9a678eb-2c51-4fe0-bc53-86c7ffb962de",
+    "deleted": false,
+    "code": "",
+    "name": "Дегустация Яна"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "eec2729c-0786-4efb-abe2-ffc3eac800ce",
+    "deleted": false,
+    "code": "",
+    "name": "Дегустация Максим"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "f42a6d8f-8b49-4b05-a2a9-b4b50d4d95fb",
+    "deleted": false,
+    "code": "",
+    "name": "Амир Б. представительские"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "ff0a88f9-2497-4fc1-9e12-4e48b2a0140b",
+    "deleted": false,
+    "code": "",
+    "name": "Маркетинг Блоггер"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "09322f46-578a-d210-add7-eec222a08871",
+    "deleted": false,
+    "code": "CASH",
+    "name": "Наличные"
+  },
+  {
+    "rootType": "PaymentType",
+    "id": "a53e1a27-7065-4be5-aff8-2f5a044400dd",
+    "deleted": false,
+    "code": "BONUS",
+    "name": "Оплата Бонусами"
+  }
+]

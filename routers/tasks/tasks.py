@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from datetime import datetime, timedelta
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from models.employees import Employees
 from services.tasks.tasks_service import get_tasks, create_task, complete_task
@@ -40,28 +41,40 @@ def get_tasks_endpoint(
     employee_id: Optional[int] = Query(default=None, description="ID сотрудника"),
     date: Optional[str] = Query(default=None, description="Дата DD.MM.YYYY — вернуть таски с due_date >= этой даты"),
     due_date: Optional[str] = Query(default=None, description="Точная дата дедлайна DD.MM.YYYY"),
+    date_from: Optional[str] = Query(default=None, description="DD.MM.YYYY — нижняя граница due_date (приоритет над date)"),
+    date_to: Optional[str] = Query(default=None, description="DD.MM.YYYY — верхняя граница due_date (приоритет над date)"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Получить список задач.
 
-    Все ID — внутренние (из БД). Фильтрация по organization_id, employee_id, due_date.
+    Все ID — внутренние (из БД). Фильтрация по organization_id, employee_id, диапазону дат.
     Время created_at возвращается в часовом поясе UTC+5.
 
     **Параметры:**
     - **organization_id** (int, опц.): фильтр по организации
     - **employee_id** (int, опц.): ID сотрудника
-    - **date** (str, опц.): DD.MM.YYYY — вернуть таски с due_date >= этой даты
-    - **due_date** (str, опц.): DD.MM.YYYY — точная дата дедлайна
+    - **date_from / date_to** (str, опц.): DD.MM.YYYY — интервал по `due_date`.
+      Если ни один параметр диапазона/даты не задан — по умолчанию выбираются **последние 7 дней**.
+    - **date** (str, опц.): DD.MM.YYYY — вернуть таски с due_date >= этой даты (legacy)
+    - **due_date** (str, опц.): DD.MM.YYYY — точная дата дедлайна (legacy)
     """
     try:
+        # Если фронт ничего не передал — выставляем дефолт «последние 7 дней».
+        if not any([date, due_date, date_from, date_to]):
+            today = datetime.now().date()
+            date_to = today.strftime("%d.%m.%Y")
+            date_from = (today - timedelta(days=7)).strftime("%d.%m.%Y")
+
         tasks = get_tasks(
             db=db,
             organization_id=organization_id,
             employee_id=employee_id,
             date=date,
             due_date=due_date,
+            date_from=date_from,
+            date_to=date_to,
         )
         return TaskListResponse(
             tasks=[_task_to_response(t, db) for t in tasks]
@@ -75,7 +88,7 @@ def get_tasks_endpoint(
 def create_task_endpoint(
     data: CreateTaskRequest,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Создать новую задачу.
@@ -113,7 +126,7 @@ def create_task_endpoint(
 def complete_task_endpoint(
     task_id: int = Path(..., description="ID задачи"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Менеджер")),
 ):
     """
     Переключить статус задачи (выполнена / не выполнена).

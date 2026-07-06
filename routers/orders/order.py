@@ -196,9 +196,16 @@ async def create_order(
                 comment=order_data.comment,
             )
 
+        if not IIKO_SEND_ORDERS:
+            create_message = "Order created locally (iiko sending disabled)"
+        elif new_order.iiko_id:
+            create_message = "Order created locally and sent to iiko"
+        else:
+            create_message = "Order created locally; iiko sending was attempted but failed (see logs)"
+
         return CreateOrderResponse(
             success=True,
-            message="Order created locally and sent to iiko" if IIKO_SEND_ORDERS else "Order created locally (iiko sending disabled)",
+            message=create_message,
             order_id=new_order.id,
             iiko_id=new_order.iiko_id,
             iiko_correlation_id=iiko_meta.get("correlationId") if iiko_meta else None,
@@ -257,22 +264,37 @@ async def pay_order_endpoint(
 
         # Закрываем заказ в iiko Cloud, если включена отправка.
         # Двухэтапный процесс по спеке iiko Cloud:
-        #   1. /api/1/order/change_payments — установить оплаты на открытый заказ.
-        #   2. /api/1/order/close — фискально закрыть заказ.
-        # Без шага 1 iiko закроет заказ «без оплат», и в iikoFront он будет
-        # выглядеть «не пробит».
+        #   1a. /api/1/order/add_payment       — сценарий 1 (заказ создан через /order/create)
+        #   1b. /api/1/order/change_payments   — сценарий 2 (подобран через init_by_table)
+        #   2.  /api/1/order/close             — фискально закрыть заказ
+        # Используем change_payments для ОБОИХ сценариев:
+        # — add_payment отключён в правах нашей iiko ApiLogin (401 "Right ... is not allowed").
+        # — change_payments принимает массив оплат и работает и для API-заказов, и для заказов с iikoFront.
+        # Если когда-нибудь iiko выдаст право api/1/order/add_payment — можно вернуть развилку через external_data.iiko_create_order.
         from config import IIKO_SEND_ORDERS
+        pay_message = "Order paid successfully"
         if IIKO_SEND_ORDERS and order.iiko_id:
             from services.orders.orders_services import (
                 change_payments_in_iiko,
                 close_order_in_iiko,
             )
-            await change_payments_in_iiko(db=db, order=order, pay_data=pay_data)
-            await close_order_in_iiko(db=db, order=order, pay_data=pay_data)
+
+            pay_result = await change_payments_in_iiko(db=db, order=order, pay_data=pay_data)
+            pay_ok = bool(pay_result) and not pay_result.get("errorDescription")
+            pay_method = "change_payments"
+
+            if pay_ok:
+                await close_order_in_iiko(db=db, order=order, pay_data=pay_data)
+            else:
+                logger.warning(
+                    f"Order {order.id}: {pay_method} в iiko не прошёл (result={pay_result!r}). "
+                    f"close пропущен — иначе iikoFront показал бы заказ 'не пробит'."
+                )
+                pay_message = "Оплачено локально; синхронизация с iiko не прошла, требуется проверка"
 
         return PayOrderResponse(
             success=True,
-            message="Order paid successfully",
+            message=pay_message,
             order_id=order.id,
             status=order.state_order,
         )
@@ -374,31 +396,93 @@ async def update_order_endpoint(
         # Поэтому отправляем в iiko ТОЛЬКО новые позиции (которых не было в old_items).
         # Удаления, изменения количества, смена стола/гостей/комментария — только локально.
         from config import IIKO_SEND_ORDERS
-        if IIKO_SEND_ORDERS and order.iiko_id and order_data.items is not None:
-            old_iiko_ids = {
-                item.get("productIikoId")
-                for item in old_items
-                if item.get("productIikoId")
-            }
-            new_items_to_send = [
-                item for item in (order.items or [])
-                if item.get("productIikoId") and item.get("productIikoId") not in old_iiko_ids
-            ]
-            if new_items_to_send:
-                await add_items_to_iiko_order(
-                    db=db,
-                    order=order,
-                    items_to_add=new_items_to_send,
+        not_synced_to_iiko: list[str] = []
+        if IIKO_SEND_ORDERS and order.iiko_id:
+            if order_data.items is not None:
+                old_by_iiko_id = {
+                    item.get("productIikoId"): item
+                    for item in old_items
+                    if item.get("productIikoId")
+                }
+                old_iiko_ids = set(old_by_iiko_id.keys())
+                new_iiko_ids = {
+                    item.get("productIikoId")
+                    for item in (order.items or [])
+                    if item.get("productIikoId")
+                }
+                new_items_to_send = [
+                    item for item in (order.items or [])
+                    if item.get("productIikoId") and item.get("productIikoId") not in old_iiko_ids
+                ]
+                # Поймать «молчаливые» расхождения с iiko Cloud:
+                removed_iiko_ids = old_iiko_ids - new_iiko_ids
+                if removed_iiko_ids:
+                    not_synced_to_iiko.append(
+                        f"удалены позиции с productIikoId={sorted(removed_iiko_ids)}"
+                    )
+                # Изменения количества существующих позиций: увеличение досылаем
+                # в iiko дельтой через add_items, уменьшение iiko Cloud не умеет.
+                qty_delta_items: list[dict] = []
+                for new_item in (order.items or []):
+                    iiko_id = new_item.get("productIikoId")
+                    if iiko_id and iiko_id in old_by_iiko_id:
+                        old_amount = old_by_iiko_id[iiko_id].get("amount")
+                        new_amount = new_item.get("amount")
+                        if old_amount is not None and new_amount is not None and float(old_amount) != float(new_amount):
+                            delta = float(new_amount) - float(old_amount)
+                            if delta > 0:
+                                delta_item = dict(new_item)
+                                delta_item["amount"] = delta
+                                qty_delta_items.append(delta_item)
+                                logger.info(
+                                    f"Order {order.id}: количество productIikoId={iiko_id} "
+                                    f"{old_amount} → {new_amount}, досылаем дельту {delta} через add_items"
+                                )
+                            else:
+                                not_synced_to_iiko.append(
+                                    f"уменьшено количество productIikoId={iiko_id}: {old_amount} → {new_amount} "
+                                    f"(iiko Cloud не поддерживает уменьшение позиций)"
+                                )
+
+                items_for_add = new_items_to_send + qty_delta_items
+                if items_for_add:
+                    await add_items_to_iiko_order(
+                        db=db,
+                        order=order,
+                        items_to_add=items_for_add,
+                    )
+                else:
+                    logger.info(
+                        f"Order {order.id}: новых позиций/дельт для iiko не найдено, "
+                        f"add_items не вызываем"
+                    )
+            # Поля-meta меняем только локально, iiko Cloud их править после создания не умеет.
+            if order_data.tableId is not None:
+                not_synced_to_iiko.append("сменили tableId — в iiko не уехало")
+            if order_data.waiterId is not None:
+                not_synced_to_iiko.append("сменили waiterId — в iiko не уехало")
+            if order_data.guests is not None:
+                not_synced_to_iiko.append("сменили guests — в iiko не уехало")
+            if getattr(order_data, "comment", None) is not None:
+                not_synced_to_iiko.append("сменили comment — в iiko не уехало")
+
+            if not_synced_to_iiko:
+                logger.warning(
+                    f"Order {order.id}: часть изменений НЕ синхронизирована с iiko Cloud: "
+                    + "; ".join(not_synced_to_iiko)
                 )
-            else:
-                logger.info(
-                    f"Order {order.id}: новых позиций для iiko не найдено, "
-                    f"add_items не вызываем"
-                )
+
+        message = "Order updated successfully"
+        if not_synced_to_iiko:
+            message = (
+                "Order updated locally. iiko Cloud не поддерживает редактирование отправленного "
+                "заказа кроме добавления позиций — часть изменений осталась только у нас: "
+                + "; ".join(not_synced_to_iiko)
+            )
 
         return UpdateOrderResponse(
             success=True,
-            message="Order updated successfully",
+            message=message,
             order_id=order.id,
         )
     except ValueError as e:

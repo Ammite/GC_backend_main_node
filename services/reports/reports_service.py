@@ -49,7 +49,8 @@ from services.transactions_and_statistics.statistics_service import (
     get_factory_revenue
 )
 from services.transactions_and_statistics.daily_aggregates_service import (
-    get_daily_metric_sum
+    get_daily_metric_sum,
+    get_daily_average_check,
 )
 
 logger = logging.getLogger(__name__)
@@ -429,17 +430,12 @@ async def get_sales_dynamics(
                 organization_id=organization_id
             ))
             
-            day_average_check = get_daily_metric_sum(
+            day_average_check = get_daily_average_check(
                 db,
-                metric_key="average_check",
                 start_date=current_date,
                 end_date=current_date,
-                organization_id=organization_id
+                organization_id=organization_id,
             )
-            
-            # Если средний чек не рассчитан, вычисляем его
-            if day_average_check == 0 and day_checks > 0:
-                day_average_check = day_revenue / day_checks
         
             return DailySalesData(
                 date=current_date.strftime("%d.%m.%Y"),

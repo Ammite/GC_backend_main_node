@@ -34,7 +34,8 @@ from services.transactions_and_statistics.statistics_service import (
 )
 from services.transactions_and_statistics.daily_aggregates_service import (
     get_daily_metric_sum,
-    get_employee_analytics_sum
+    get_daily_average_check,
+    get_employee_analytics_sum,
 )
 from models.transaction import Transaction
 
@@ -98,20 +99,13 @@ async def get_analytics(
         lambda: get_daily_metric_sum(db, metric_key="revenue_total", start_date=previous_start_only, end_date=previous_end_only, organization_id=organization_id),
         lambda: get_daily_metric_sum(db, metric_key="orders_count", start_date=start_date_only, end_date=end_date_only, organization_id=organization_id),
         lambda: get_daily_metric_sum(db, metric_key="orders_count", start_date=previous_start_only, end_date=previous_end_only, organization_id=organization_id),
-        lambda: get_daily_metric_sum(db, metric_key="average_check", start_date=start_date_only, end_date=end_date_only, organization_id=organization_id),
-        lambda: get_daily_metric_sum(db, metric_key="average_check", start_date=previous_start_only, end_date=previous_end_only, organization_id=organization_id)
+        lambda: get_daily_average_check(db, start_date=start_date_only, end_date=end_date_only, organization_id=organization_id),
+        lambda: get_daily_average_check(db, start_date=previous_start_only, end_date=previous_end_only, organization_id=organization_id)
     )
-    
+
     # Преобразуем количество чеков в int
     current_checks = int(current_checks or 0)
     previous_checks = int(previous_checks or 0)
-    
-    # Если средний чек не рассчитан, вычисляем его
-    if current_avg_check == 0 and current_checks > 0:
-        current_avg_check = current_revenue / current_checks
-    
-    if previous_avg_check == 0 and previous_checks > 0:
-        previous_avg_check = previous_revenue / previous_checks
     
     # Фабрика показывается отдельно (не входит в revenue_total)
     current_factory = current_revenue_data.get("Фабрика", 0.0)

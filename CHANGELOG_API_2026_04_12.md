@@ -121,6 +121,62 @@ GET /reports/profit-loss/detail?item_id=revenue_kitchen&item_type=revenue&date_f
 
 ---
 
+## Обновление GET /reports/profit-loss/detail (16.04.2026)
+
+### Новый параметр: organization_id
+
+| Параметр        | Тип | Обязательный | Описание |
+|-----------------|-----|-------------|----------|
+| organization_id | int | нет | ID организации для фильтрации |
+
+### Новое поле details в объектах by_organization
+
+Для статей из транзакций (`expense_account:*`, `revenue_other_income:*`) каждая организация теперь содержит массив `details` — список отдельных транзакций.
+
+Для статей из выручки (`revenue_kitchen`, `revenue_bar` и т.д.), себестоимости и комиссии банков — `details` = `null`.
+
+**Структура объекта в details:**
+
+| Поле    | Тип    | Описание |
+|---------|--------|----------|
+| comment | string \| null | Комментарий к транзакции |
+| date    | string \| null | Дата в формате DD.MM.YYYY |
+| amount  | float  | Сумма транзакции |
+| name    | string \| null | ФИО создателя (пока не заполняется) |
+
+**Пример запроса:**
+```
+GET /reports/profit-loss/detail?item_id=expense_account:Аренда&item_type=expense&date_from=01.04.2026&date_to=16.04.2026&organization_id=1
+```
+
+**Пример ответа:**
+```json
+{
+  "success": true,
+  "item_id": "expense_account:Аренда",
+  "item_type": "expense",
+  "item_name": "Аренда",
+  "total": 1650000.0,
+  "by_organization": [
+    {
+      "organization_id": 1,
+      "organization_name": "ФАБРИКА",
+      "amount": 1650000.0,
+      "details": [
+        {
+          "comment": "аренда за апрель",
+          "date": "03.04.2026",
+          "amount": 1650000.0,
+          "name": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
 ## Багфикс: квесты не обновлялись при оплате заказа
 
 Проблема: в external_data заказа поле waiterId содержит User.id, а quest_service искал Employee.id — не находил сотрудника.

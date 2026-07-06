@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.profit_loss import get_profit_loss_report, get_profit_loss_detail
 from schemas.profit_loss import ProfitLossResponse, ProfitLossDetailResponse
@@ -21,7 +21,7 @@ async def get_profit_loss_endpoint(
     date_from: Optional[str] = Query(default=None, description="Начало периода DD.MM.YYYY (приоритет над date+period)"),
     date_to: Optional[str] = Query(default=None, description="Конец периода DD.MM.YYYY (приоритет над date+period)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Получить отчет о прибылях и убытках (Profit & Loss Report)
@@ -67,14 +67,17 @@ def get_profit_loss_detail_endpoint(
     item_type: str = Query(description="Тип: 'revenue' или 'expense'"),
     date_from: str = Query(description="Начало периода DD.MM.YYYY"),
     date_to: str = Query(description="Конец периода DD.MM.YYYY"),
+    organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_role("Владелец")),
 ):
     """
     Детализация статьи P&L по организациям (точкам).
 
     Принимает ID статьи из ответа /reports/profit-loss и возвращает
     разбивку суммы по каждой организации за указанный период.
+    Для статей из транзакций (expense_account, revenue_other_income)
+    каждая организация содержит массив details с отдельными транзакциями.
     """
     if item_type not in ("revenue", "expense"):
         raise HTTPException(status_code=400, detail="item_type должен быть 'revenue' или 'expense'")
@@ -85,6 +88,7 @@ def get_profit_loss_detail_endpoint(
             item_type=item_type,
             date_from=date_from,
             date_to=date_to,
+            organization_id=organization_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

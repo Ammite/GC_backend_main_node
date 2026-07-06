@@ -1048,6 +1048,43 @@ def _generate_unique_login(base_login: str, existing_logins: set) -> str:
     return login
 
 
+# Маппинг кодов ролей iiko на наш `users.app_role` (UI-метка).
+# Только два уровня: «Менеджер» (управленцы, бухгалтерия, шефы, директора)
+# и «Официант» (все остальные сотрудники: официанты, повара, бармены, тех.персонал, ...).
+# Третья роль «Владелец» назначается ВРУЧНУЮ через миграцию (Акжан, Амир) — здесь её нет.
+_MANAGER_CODES = {
+    # IIKO коды управления и финансов
+    "ADM",          # Системный администратор
+    "MN0",          # Управляющий
+    "MN1",          # Менеджер
+    "MD",           # Менеджер Доставки
+    "GuestM",       # Гостевой менеджер
+    "TekhD",        # Технический директор
+    "CFO",          # Финансовый директор
+    "OpDir",        # Операционный директор
+    "ZFD",          # Зам. Фин директора
+    "GBuh",         # Главный бухгалтер
+    "buh",          # Бухгалтер
+    "BUH",          # Бухгалтер (дубликат регистра)
+    "HR",           # HR Менеджер
+    "BChef",        # Бренд шеф повар (управленческая роль)
+    "BChefB",       # Бренд шеф бара
+    # Кириллический код (legacy)
+    "менеджер",     # Менеджер по работе с гостями
+}
+
+
+def _map_role_code_to_app_role(role_code: Optional[str]) -> str:
+    """iiko role code → app_role label.
+
+    Только «Менеджер» / «Официант». «Владелец» проставляется отдельно (миграцией).
+    Без `role_code` — тоже «Официант» (минимальные права по умолчанию).
+    """
+    if role_code and role_code in _MANAGER_CODES:
+        return "Менеджер"
+    return "Официант"
+
+
 def create_users_for_all_employees(db: Session) -> List[Dict[str, Any]]:
     """
     Создать пользователей для всех сотрудников, у которых нет связанного User.
@@ -1055,6 +1092,8 @@ def create_users_for_all_employees(db: Session) -> List[Dict[str, Any]]:
     Для каждого Employee без User (совпадение по iiko_id):
     - Логин = транслитерация Employee.name (латиница, lowercase, пробелы -> точки)
     - Пароль — случайные 8 символов (буквы + цифры), возвращается в открытом виде
+    - `roles_id` берётся из `Employee.main_role_id`
+    - `app_role` маппится из `Employee.main_role_code` (см. `_map_role_code_to_app_role`)
 
     Returns:
         Список словарей: [{"employee_id", "login", "plain_password"}]
@@ -1091,6 +1130,8 @@ def create_users_for_all_employees(db: Session) -> List[Dict[str, Any]]:
             login=login,
             password=hash_password(plain_password),
             iiko_id=employee.iiko_id,
+            roles_id=employee.main_role_id,
+            app_role=_map_role_code_to_app_role(employee.main_role_code),
         )
         db.add(new_user)
         existing_logins.add(login)

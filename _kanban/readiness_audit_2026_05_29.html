@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Pre-demo readiness audit — Грузин-Кузин, 2026-05-29</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 1100px; margin: 30px auto; padding: 0 20px; color: #1f2328; line-height: 1.55; background: #fafbfc; }
+  h1 { border-bottom: 2px solid #d0d7de; padding-bottom: 8px; }
+  h2 { margin-top: 40px; padding-bottom: 6px; border-bottom: 1px solid #d0d7de; }
+  h3 { margin-top: 24px; color: #24292f; }
+  .verdict { padding: 16px 20px; border-radius: 8px; font-size: 16px; font-weight: 600; margin: 18px 0; }
+  .red    { background: #ffebe9; border: 1px solid #ff8182; color: #82071e; }
+  .yellow { background: #fff8c5; border: 1px solid #d4a72c; color: #54480a; }
+  .green  { background: #dafbe1; border: 1px solid #4ac26b; color: #0f5132; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; background: white; }
+  th, td { border: 1px solid #d0d7de; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f6f8fa; font-weight: 600; }
+  td.st { white-space: nowrap; font-weight: 600; }
+  .st-r { color: #cf222e; } .st-y { color: #9a6700; } .st-g { color: #1a7f37; }
+  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; font-family: SFMono-Regular, Consolas, monospace; font-size: 13px; }
+  pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+  .box { padding: 12px 16px; border-left: 4px solid #d0d7de; background: white; margin: 12px 0; }
+  .box.r { border-color: #cf222e; background: #fff5f5; }
+  .box.y { border-color: #d4a72c; background: #fffbeb; }
+  .box.g { border-color: #1a7f37; background: #f0fdf4; }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  .meta { color: #57606a; font-size: 14px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .pill.r { background: #ffd9d4; color: #82071e; }
+  .pill.y { background: #fff5c2; color: #54480a; }
+  .pill.g { background: #c5f7d1; color: #0f5132; }
+</style>
+</head>
+<body>
+
+<h1>Pre-demo readiness audit — Грузин-Кузин</h1>
+<p class="meta">Дата: <b>2026-05-29</b> · Источник: 4 параллельных read-only агента + ручная сверка · backend ветка <code>main</code></p>
+
+<div class="verdict red">
+  Общий вердикт: 🔴 НЕ ГОТОВ к открытому демо с боевыми операциями.<br>
+  Можно показывать <b>только отчёты/аналитику и UI</b> без реального цикла заказа. Запрет на оформление заказов с отправкой в iiko до устранения 3 P0-блокеров.
+</div>
+
+<h2>P0 — блокеры, которые могут «выстрелить» прямо на демо</h2>
+
+<div class="box r">
+<h3>1. 🔴 Диск 100% занят — 31 МБ свободно на /</h3>
+<pre>/dev/vda2       29G   28G   31M 100% /</pre>
+Любая запись (логи backend'а, БД WAL, cache, новые заказы) может упасть с <code>ENOSPC</code>. Postgres при заполненном диске уходит в read-only и backend начнёт сыпать 500-ми. Главные кандидаты на очистку: <code>logs/sync_cron.log</code> (47МБ), любые большие <code>cache/*.json</code>, <code>venv/lib/python3.12/site-packages/playwright</code>.<br>
+<b>Действие:</b> ротация/удаление лога + поиск других толстых файлов на <code>/</code>.
+</div>
+
+<div class="box r">
+<h3>2. 🔴 Меню в БД устарело на 2.5 месяца — стоп-листы фейковые</h3>
+<code>items.MAX(updated_at) = 2026-03-17 21:32</code>. External Menu (task 9.4) не реализован — backend всё ещё работает с локальной копией. В коде <code>order/create</code> стоит <code>checkStopList=false</code> (<code>services/orders/orders_services.py:621</code>).<br>
+<b>Что произойдёт на демо:</b> официант пытается продать товар, который на самом деле снят со стопа → <code>order/create</code> уйдёт в iiko → <code>commands/status</code> вернёт Error → <b>Telegram-алерт «[Грузин]» придёт</b>, но клиент увидит «ошибка пробития» прямо на экране.<br>
+<b>Действие до демо:</b> руками запустить полный sync меню или согласовать с клиентом перечень безопасных позиций.
+</div>
+
+<div class="box r">
+<h3>3. 🔴 <code>IIKO_DEFAULT_REMOVAL_TYPE_ID</code> не задан в .env — отмена не уйдёт в iiko</h3>
+В <code>config.py:46</code> читается через <code>os.getenv</code> без дефолта → <code>None</code>. В <code>services/orders/orders_services.py:783</code> при отсутствии и в запросе, и в env <b>cancel молча скипается</b> (только лог error, без Telegram-алерта).<br>
+<b>Что произойдёт:</b> в нашем UI заказ CANCELLED, в iikoFront остаётся ОТКРЫТЫМ. Кассир потом удивится «висящему» заказу.<br>
+<b>Действие:</b> получить из iiko-настроек UUID причины удаления и добавить в <code>.env</code>.
+</div>
+
+<h2>P1 — высокий риск на демо</h2>
+
+<table>
+<tr><th>Риск</th><th>Проявление</th><th>Файл</th></tr>
+<tr><td class="st st-r">21-дневная дыра в данных 04.05–23.05</td><td>Дашборд за май покажет провал. Это след старого kill switch — sync не работал.</td><td><code>sales</code>, <code>transactions</code>, <code>warehouse_documents</code></td></tr>
+<tr><td class="st st-r">Хардкоды документов (task 2 не сделан)</td><td>Любое создание накладной/списания/инвентаризации с UI → 400/500. На NEW инсталляции UUID'ы OLD.</td><td><code>services/warehouse/writeoff_service.py:22</code><br><code>invoice_service.py:26-30</code></td></tr>
+<tr><td class="st st-y">Waiter attribution (9.5) не работает</td><td>В iiko-отчётах тестовые заказы покажутся как «Интегратор». Если демонстрируется зарплата официантов — нули за сегодня.</td><td><code>services/orders/orders_services.py:614-616</code></td></tr>
+<tr><td class="st st-y">Сценарий 2 «открыл стол на кассе → подхватили» — нет</td><td><code>init_by_table</code> не реализован; probe ранее дал HTTP 500. Если демонстрируется сценарий «иикоФронт → наше приложение» — пусто.</td><td><code>_kanban/task_9_3_research_2026_05_28.md</code></td></tr>
+<tr><td class="st st-y">100 файлов незакоммичено</td><td>+593 LOC в <code>iiko_service.py</code>, +394 в <code>orders_services.py</code> и т.д. Реальный код только в working tree. Если откатить — потеряется всё.</td><td><code>git status</code></td></tr>
+<tr><td class="st st-y">PUT /orders/{id} — удаление позиций/смена tableId не уходят в iiko</td><td>В iiko полетят только новые позиции через <code>add_items</code>. Уменьшения и удаления — только локально. Расхождение касса ↔ наша БД.</td><td><code>routers/orders/order.py:427-440</code></td></tr>
+<tr><td class="st st-y">add_payment payload не сверен публично</td><td>Если iiko вернёт 400 — фронт получит «оплачено локально, синхронизация не прошла». Telegram-алерта в этой ветке нет (нет correlationId → wait_command не зовётся).</td><td><code>orders_services.py:1058-1062</code></td></tr>
+</table>
+
+<h2>P2 — известные ограничения, не блокеры</h2>
+<ul>
+<li>Cron намеренно отключён (<code>/etc/crontab</code> обе строки закомментированы). Свежие данные только через ручные триггеры. Это попадает в открытый task #3 «включить cron обратно».</li>
+<li><code>bank_commissions</code> заморожены с 25.10.2025 (7 мес). <code>pay_outs</code> — 8 записей за всё время, фактически не работает.</li>
+<li>Telegram-токен бота захардкожен в <code>utils/telegram_notify.py</code>, а не из env. Не блокер на сегодня, но в репо токен.</li>
+<li><code>checkStopList=false</code> + <code>createPaymentIfNotExists=false</code> в <code>order/create</code> — deprecated поля, iiko их игнорирует. Косметика.</li>
+<li>30 557 d_orders в статусе CREATED/NOT_DELETED &gt;1 суток назад — старые «висяки», не закрыты в iiko. Часть из них может быть от kill-switch периода.</li>
+</ul>
+
+<h2>Операционное состояние</h2>
+<table>
+<tr><th>Компонент</th><th>Статус</th><th>Детали</th></tr>
+<tr><td>Процесс backend</td><td class="st st-g">🟢 жив</td><td>PID 1302077, started 07:40, 2 workers</td></tr>
+<tr><td>systemd unit <code>gz_backend</code></td><td class="st st-g">🟢 active+enabled</td><td>Поднимется после ребута</td></tr>
+<tr><td>Порт 8008</td><td class="st st-g">🟢 listening</td><td><code>/openapi.json</code> → 200, 113 роутов</td></tr>
+<tr><td><code>IIKO_REQUESTS_DISABLED</code></td><td class="st st-g">🟢 false</td><td>Намеренно снят сегодня для запуска</td></tr>
+<tr><td><code>IIKO_SEND_ORDERS</code></td><td class="st st-g">🟢 true</td><td>Намеренно включён сегодня для запуска</td></tr>
+<tr><td><code>IIKO_DEFAULT_REMOVAL_TYPE_ID</code></td><td class="st st-r">🔴 None</td><td>В .env нет — cancel молча скипается</td></tr>
+<tr><td>Cloud key</td><td class="st st-g">🟢</td><td>32 chars, prefix <code>69a3d1c7</code></td></tr>
+<tr><td>Server creds</td><td class="st st-g">🟢</td><td>Hamza + 40-char password, <code>gruzin-cuisine-co.iiko.it</code></td></tr>
+<tr><td>Telegram алерты</td><td class="st st-y">🟡 работают, токен в коде</td><td>Бот <code>8770054212:...</code>, chat <code>435145574</code></td></tr>
+<tr><td>Диск /</td><td class="st st-r">🔴 100% (31МБ)</td><td>Любой write может упасть</td></tr>
+<tr><td>Cron</td><td class="st st-y">🟡 disabled</td><td>Намеренно. Последний sync_cron.log — 2026-05-26 06:00</td></tr>
+<tr><td>git working tree</td><td class="st st-y">🟡 100 файлов dirty</td><td>14 296 deletions (в основном cache JSON), +2014 insertions кода</td></tr>
+<tr><td>main vs upstream/main</td><td class="st st-y">🟡 ahead 2</td><td><code>b8a1233 all</code>, <code>0f5b3aa</code> merge</td></tr>
+</table>
+
+<h2>Свежесть данных</h2>
+<table>
+<tr><th>Таблица</th><th>Последняя запись</th><th>За 7 дней (с 22.05)</th><th>Статус</th></tr>
+<tr><td>sales</td><td>2026-05-29 02:24</td><td>14 657</td><td class="st-g">🟢</td></tr>
+<tr><td>transactions</td><td>2026-05-28 23:00</td><td>57 640</td><td class="st-g">🟢</td></tr>
+<tr><td>shifts</td><td>2026-05-28 21:18</td><td>436 (19 открыты)</td><td class="st-g">🟢</td></tr>
+<tr><td>d_orders (наши)</td><td>2026-05-28 14:08</td><td>8</td><td class="st-y">🟡 мало</td></tr>
+<tr><td>items (меню)</td><td>2026-03-17 21:32</td><td>0</td><td class="st-r">🔴 2.5 мес</td></tr>
+<tr><td>warehouse_documents</td><td>2026-05-03</td><td>0</td><td class="st-r">🔴</td></tr>
+<tr><td>incomes</td><td>2026-05-02</td><td>0</td><td class="st-r">🔴</td></tr>
+<tr><td>expenses</td><td>2026-05-03</td><td>0</td><td class="st-r">🔴</td></tr>
+<tr><td>user_salaries</td><td>2026-05-02</td><td>0</td><td class="st-r">🔴</td></tr>
+<tr><td>bank_commissions</td><td>2025-10-25</td><td>0</td><td class="st-r">🔴 7 мес</td></tr>
+</table>
+
+<p>Дыра в продажах/транзакциях: после 03.05 поток падает до нуля, восстанавливается 25.05. Это <b>след старого kill switch</b> (был включён 2026-05-04). Если демо включает «динамика мая» — будет провал в графике.</p>
+
+<h2>Что точно работает (по коду)</h2>
+<div class="box g">
+<ul>
+<li>Все 5 iiko-эндпоинтов цикла обёрнуты в try/except — локальный заказ всегда сохраняется, даже если iiko упал.</li>
+<li>kill switch корректно учитывается во всех iiko-вызовах через <code>_make_request</code> (<code>iiko_service.py:279</code>).</li>
+<li><code>order.iiko_id is None</code> чек стоит в каждой iiko-функции перед вызовом.</li>
+<li><code>wait_command</code> (task 9.1) реализован и никогда не бросает — возвращает dict со <code>state ∈ {Success, Error, Timeout, TransportError, NoCorrelationId, NoResponse}</code>. Telegram-alert безопасный (try/except внутри).</li>
+<li>Сценарий 1 fork в <code>pay_order_endpoint</code> по <code>external_data.iiko_create_order.orderId</code> работает корректно — <code>add_payment → close</code> только если pay прошёл.</li>
+<li>Авторизация, отчёты, аналитика свежие (sales до 29.05 утром), period guard 60-дней работает.</li>
+</ul>
+</div>
+
+<h2>Безопасный демо-сценарий (что можно показывать)</h2>
+<ol>
+<li><b>Login</b> — Владелец / Менеджер. Показать что role-enforcement реально гасит чужие роуты (403).</li>
+<li><b>Отчёты</b>: <code>/reports/profit-loss</code>, <code>/reports/orders</code>, <code>/reports/sales-dynamics</code>, <code>/popular-dishes</code>, <code>/reports/moneyflow</code> — данные за <b>25-28.05</b> свежие. Период <b>не</b> распространять на 04-23.05.</li>
+<li><b>Аналитика и moneyflow за 28.05</b>: блюда 2.96М, расходы 956К, выручка 7.94М тг — живые цифры.</li>
+<li><b>Просмотр сотрудников</b>, <b>смены</b>, <b>квесты</b>, <b>смена пароля</b>.</li>
+<li><b>Профиль</b> с <code>employee_id</code>.</li>
+<li><b>Зарплата</b> — дёргать через <code>Employee.id</code>, не через User.id (фронт может слать неверный id).</li>
+</ol>
+
+<h2>Что лучше НЕ показывать</h2>
+<ul>
+<li>Полный цикл заказа waiter → оплата → close (стоп-листы устарели, removalTypeId не задан, waiter attribution не работает).</li>
+<li>Создание накладных/списаний/инвентаризации — хардкоды OLD UUID.</li>
+<li>Экран столов с «живыми» статусами — статусы фейковые (<code>rooms_service.py:53-56</code> хардкод).</li>
+<li>Сценарий «открыл на кассе → подхватили в нашем приложении» — нет.</li>
+<li>Отчёт по зарплате официантов за сегодняшние тестовые заказы — атрибуция «Интегратор».</li>
+<li>Дашборды за май целиком — 3-недельная пропасть 04-24.05.</li>
+</ul>
+
+<h2>Если есть 30 минут до старта</h2>
+<ol>
+<li><b>Освободить диск</b> — обнулить <code>logs/sync_cron.log</code> (47МБ), сжать старые логи. <code>echo "" &gt; logs/sync_cron.log</code>.</li>
+<li><b>Добавить <code>IIKO_DEFAULT_REMOVAL_TYPE_ID</code> в .env</b> — иначе cancel в iiko не пройдёт. Взять UUID из iiko-настроек «причины удаления».</li>
+<li><b>Закоммитить</b> 40 рабочих файлов на отдельную ветку — страховка от потери.</li>
+<li><b>Опционально</b>: ручной menu sync, чтобы поднять <code>items.updated_at</code> и снизить риск стоп-листов.</li>
+<li><b>Согласовать с клиентом</b> демо-сценарий: только просмотр отчётов и аналитики, без оформления реальных заказов.</li>
+</ol>
+
+<h2>Источники</h2>
+<p class="meta">
+4 параллельных read-only агента: iiko-цикл (file:line proofs), DB freshness (12 SQL-запросов), operational state (df/git/curl/systemctl), demo-gaps (task_9 + frontend_api_audit). Все находки сверены вручную: <code>df -h</code>, <code>SELECT MAX(updated_at) FROM items</code>, <code>grep IIKO_DEFAULT_REMOVAL_TYPE_ID</code>, <code>git diff --stat</code>.<br><br>
+Полный набор kanban-документов:
+<code>_kanban/iiko_endpoints_verification_2026_05_28.md</code>,
+<code>_kanban/task_9_3_research_2026_05_28.md</code>,
+<code>_kanban/frontend_api_audit.md</code>,
+<code>_kanban/SESSION_HANDOFF_2026_05_28.md</code>.
+</p>
+
+</body>
+</html>

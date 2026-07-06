@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-05-28T15:30:03.419783",
+  "organization": {
+    "id": 5,
+    "name": "1ГК Бокейхана",
+    "iiko_id_cloud": "5524d769-3ad2-4b38-bb22-09b656488503"
+  },
+  "endpoint": "/api/1/order/by_table (POST, fixed: organizationIds + tableIds plural)",
+  "tables_probed": [],
+  "raw_response": {
+    "correlationId": "75196355-2dd5-4547-a014-3138680f9b64",
+    "orders": []
+  }
+}

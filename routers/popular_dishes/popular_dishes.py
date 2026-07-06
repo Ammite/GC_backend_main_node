@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.popular_dishes import get_popular_dishes_report
 from schemas.popular_dishes import PopularDishesResponse
@@ -20,7 +20,7 @@ def get_popular_dishes_endpoint(
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     limit: int = Query(default=10, ge=1, le=100, description="Количество блюд в топе"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить отчет о популярных и непопулярных блюдах

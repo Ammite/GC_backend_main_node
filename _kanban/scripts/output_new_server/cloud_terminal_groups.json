@@ -1,0 +1,106 @@
+[
+  {
+    "organizationId": "0b349346-7b49-4282-8e8f-8dd852c272d6",
+    "items": [
+      {
+        "id": "2e6a5fd4-9d05-4761-9580-0b53eff1fc6b",
+        "organizationId": "0b349346-7b49-4282-8e8f-8dd852c272d6",
+        "name": "Грузн-Мангилик Ел 50",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "125c8105-b1de-4379-85ab-9ec5f3580a46",
+    "items": [
+      {
+        "id": "f811cbbf-809c-4fe3-bc89-687f66b11d29",
+        "organizationId": "125c8105-b1de-4379-85ab-9ec5f3580a46",
+        "name": "Нурсая",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "e270cf6e-4c90-4c31-97ab-3d1c81547306",
+    "items": [
+      {
+        "id": "190e6003-7953-4781-8aec-a37987120f20",
+        "organizationId": "e270cf6e-4c90-4c31-97ab-3d1c81547306",
+        "name": "5ГК Шарль де Голль",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "5524d769-3ad2-4b38-bb22-09b656488503",
+    "items": [
+      {
+        "id": "ff7d9893-93e1-4f69-b7a8-cae9c9ffa08c",
+        "organizationId": "5524d769-3ad2-4b38-bb22-09b656488503",
+        "name": "Бокейхана 8",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "84cd43ee-43ad-42ef-bcc9-517e8ce3482c",
+    "items": [
+      {
+        "id": "31ac29a2-6892-459e-9b3c-7de2f5bd95ac",
+        "organizationId": "84cd43ee-43ad-42ef-bcc9-517e8ce3482c",
+        "name": "Кабанбай батыр, 58Б",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "ba9a0e23-be92-42e1-9b03-00f2cfb26fb4",
+    "items": [
+      {
+        "id": "9d2c4c1d-f94c-4a58-a87a-4fd5d022131e",
+        "organizationId": "ba9a0e23-be92-42e1-9b03-00f2cfb26fb4",
+        "name": "Кабанбай батыра 34",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "b39d27ab-2ff3-4ac2-9edd-96962ce15a74",
+    "items": [
+      {
+        "id": "8ebe8c3e-5955-41e2-a069-e26ca796be08",
+        "organizationId": "b39d27ab-2ff3-4ac2-9edd-96962ce15a74",
+        "name": "Грузин Кузин Мухамедханова",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  },
+  {
+    "organizationId": "4be87645-d046-46d5-bfe4-6cd74d7f61ac",
+    "items": [
+      {
+        "id": "17a1a8bb-e447-4a03-adb0-29b5e5806805",
+        "organizationId": "4be87645-d046-46d5-bfe4-6cd74d7f61ac",
+        "name": "Кошкарбаев, 2",
+        "address": "",
+        "timeZone": "05:00:00",
+        "posVersion": "9.4.7039.0"
+      }
+    ]
+  }
+]

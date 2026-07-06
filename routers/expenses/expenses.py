@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.analytics.analytics_service import get_expenses_analytics
 from schemas.analytics import ExpensesAnalyticsResponse
@@ -39,7 +39,7 @@ async def get_expenses_endpoint(
     period: Optional[str] = Query(default="day", description="Период: day, week, month"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить аналитику расходов
@@ -82,7 +82,7 @@ async def get_expenses_endpoint(
 async def create_expense_endpoint(
     expense_data: CreateExpenseRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать новый расход и отправить изъятие в iiko.
@@ -112,56 +112,70 @@ async def create_expense_endpoint(
     ```
     """
     try:
-        expense = create_expense(db, expense_data, user_id=user.id if hasattr(user, 'id') else None)
-
-        iiko_message = ""
-        # expense_type — UUID типа изъятия, department берём через organization.department_id
+        # Pre-check: если у organization не задан department.iiko_id — НЕ создаём локальный расход,
+        # возвращаем 400. Раньше создавался локально + возвращался "success: true (в iiko не отправлено)" —
+        # это вводило фронт в заблуждение и приводило к дубликатам при повторных попытках.
+        dept = None
         if expense_data.organization_id:
             org = db.query(Organization).filter(Organization.id == expense_data.organization_id).first()
-            dept = None
             if org and org.department_id:
                 from models.department import Department
                 dept = db.query(Department).filter(Department.id == org.department_id).first()
-            logger.info(f"Expense iiko send: org_id={expense_data.organization_id}, org.department_id={org.department_id if org else None}, dept.iiko_id={dept.iiko_id if dept else None}")
-            if dept and dept.iiko_id:
-                try:
-                    from datetime import datetime as _dt
-                    raw_date = expense_data.date
-                    try:
-                        parsed = _dt.strptime(raw_date, "%d.%m.%Y")
-                    except ValueError:
-                        parsed = _dt.fromisoformat(raw_date.replace("Z", "+00:00"))
-                    pay_out_date = parsed.strftime("%Y-%m-%d")
+            if not dept or not dept.iiko_id:
+                logger.warning(
+                    f"create_expense отклонён: organization_id={expense_data.organization_id} не имеет "
+                    f"department.iiko_id (org.department_id={org.department_id if org else None})"
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Для этой организации не задан department с iiko_id — расход в iiko отправить нельзя. "
+                        "Привяжите Department к Organization, либо создавайте расход через другой эндпоинт."
+                    ),
+                )
 
-                    pay_out_request = CreatePayOutRequest(
-                        payOutTypeId=expense_data.expense_type,
-                        payOutDate=pay_out_date,
-                        departmentSumMap={dept.iiko_id: expense_data.amount},
-                        comment=expense_data.comment,
-                        counteragent_id=expense_data.counteragent_id,
-                    )
-                    pay_out_result = await create_pay_out_in_iiko(
-                        db=db,
-                        pay_out_data=pay_out_request,
-                        organization_id=expense_data.organization_id,
-                        user_id=user.id if hasattr(user, 'id') else None,
-                    )
-                    if pay_out_result.get("success"):
-                        iiko_message = " и отправлен в iiko"
-                    else:
-                        iiko_message = f" (ошибка отправки в iiko: {pay_out_result.get('message', '')})"
-                        logger.warning(f"Расход {expense.id} создан локально, но не отправлен в iiko: {pay_out_result}")
-                except Exception as iiko_err:
-                    iiko_message = " (ошибка отправки в iiko)"
-                    logger.error(f"Ошибка отправки расхода {expense.id} в iiko: {iiko_err}", exc_info=True)
-            else:
-                iiko_message = " (для этой организации не задан департамент — в iiko не отправлено)"
+        expense = create_expense(db, expense_data, user_id=user.id if hasattr(user, 'id') else None)
+
+        iiko_message = ""
+        if dept and dept.iiko_id:
+            try:
+                from datetime import datetime as _dt
+                raw_date = expense_data.date
+                try:
+                    parsed = _dt.strptime(raw_date, "%d.%m.%Y")
+                except ValueError:
+                    parsed = _dt.fromisoformat(raw_date.replace("Z", "+00:00"))
+                pay_out_date = parsed.strftime("%Y-%m-%d")
+
+                pay_out_request = CreatePayOutRequest(
+                    payOutTypeId=expense_data.expense_type,
+                    payOutDate=pay_out_date,
+                    departmentSumMap={dept.iiko_id: expense_data.amount},
+                    comment=expense_data.comment,
+                    counteragent_id=expense_data.counteragent_id,
+                )
+                pay_out_result = await create_pay_out_in_iiko(
+                    db=db,
+                    pay_out_data=pay_out_request,
+                    organization_id=expense_data.organization_id,
+                    user_id=user.id if hasattr(user, 'id') else None,
+                )
+                if pay_out_result.get("success"):
+                    iiko_message = " и отправлен в iiko"
+                else:
+                    iiko_message = f" (ошибка отправки в iiko: {pay_out_result.get('message', '')})"
+                    logger.warning(f"Расход {expense.id} создан локально, но не отправлен в iiko: {pay_out_result}")
+            except Exception as iiko_err:
+                iiko_message = " (ошибка отправки в iiko)"
+                logger.error(f"Ошибка отправки расхода {expense.id} в iiko: {iiko_err}", exc_info=True)
 
         return CreateExpenseResponse(
             success=True,
             message=f"Расход успешно создан{iiko_message}",
             expense_id=expense.id
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating expense: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
@@ -176,7 +190,7 @@ async def get_expenses_list_endpoint(
     limit: int = Query(default=100, description="Лимит записей"),
     offset: int = Query(default=0, description="Смещение для пагинации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список расходов с фильтрацией
@@ -201,7 +215,7 @@ async def get_expenses_list_endpoint(
 async def get_expense_detail_endpoint(
     expense_id: int = Path(..., description="ID расхода"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить детали расхода по ID
@@ -223,7 +237,7 @@ async def update_expense_endpoint(
     expense_id: int = Path(..., description="ID расхода"),
     expense_data: UpdateExpenseRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Обновить расход (только локально, в iiko не перезаправляется).
@@ -248,7 +262,7 @@ async def update_expense_endpoint(
 async def delete_expense_endpoint(
     expense_id: int = Path(..., description="ID расхода"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Удалить расход

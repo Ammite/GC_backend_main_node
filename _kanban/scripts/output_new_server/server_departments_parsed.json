@@ -1,0 +1,209 @@
+{
+  "departments": [
+    {
+      "id": "84359dc1-c41d-422d-877c-1d4174a10b22",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "3",
+      "name": "1ГК Бокейхана",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "d201418e-3578-4914-9615-78a30914ba02",
+      "parentId": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "code": "8",
+      "name": "2ГК Мангилик",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "590221300290"
+    },
+    {
+      "id": "f22dcf31-c83b-489a-bf2a-1f712708cb79",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "5",
+      "name": "3ГК Highvill",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "f4010a77-b9a1-42aa-adaa-576a33b3743b",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "2",
+      "name": "4ГК Expo",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "6b5c41c3-1e74-4ae3-95b7-3cf106b116db",
+      "parentId": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "code": "1",
+      "name": "5ГК Шарль де Голль",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "590221300290"
+    },
+    {
+      "id": "65608f09-17f5-48ee-a69d-b4dfd801b17c",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "6",
+      "name": "6ГК Нурсая",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "e66fb2d6-379d-4fa5-a1d6-8abb4ba16a0e",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "4",
+      "name": "7ГК Площадь",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "df4eacb6-14f1-472b-ba30-1242279f5990",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "7",
+      "name": "8ГК Мухамедханова",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "5483afc8-8e46-4ce8-91d5-0cce4e2147c6",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "10",
+      "name": "ГОЛОВНОЙ ОФИС",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "6884c58f-8f89-469e-b2ca-d8fe2a2ec7e3",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "9",
+      "name": "ФАБРИКА",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    }
+  ],
+  "jurpersons": [
+    {
+      "id": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Акжан",
+      "type": "JURPERSON"
+    },
+    {
+      "id": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Амиржан",
+      "type": "JURPERSON"
+    },
+    {
+      "id": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Шаяхметов",
+      "type": "JURPERSON"
+    }
+  ],
+  "all_items": [
+    {
+      "id": "84359dc1-c41d-422d-877c-1d4174a10b22",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "3",
+      "name": "1ГК Бокейхана",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "d201418e-3578-4914-9615-78a30914ba02",
+      "parentId": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "code": "8",
+      "name": "2ГК Мангилик",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "590221300290"
+    },
+    {
+      "id": "f22dcf31-c83b-489a-bf2a-1f712708cb79",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "5",
+      "name": "3ГК Highvill",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "f4010a77-b9a1-42aa-adaa-576a33b3743b",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "2",
+      "name": "4ГК Expo",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "6b5c41c3-1e74-4ae3-95b7-3cf106b116db",
+      "parentId": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "code": "1",
+      "name": "5ГК Шарль де Голль",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "590221300290"
+    },
+    {
+      "id": "65608f09-17f5-48ee-a69d-b4dfd801b17c",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "6",
+      "name": "6ГК Нурсая",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "e66fb2d6-379d-4fa5-a1d6-8abb4ba16a0e",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "4",
+      "name": "7ГК Площадь",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "df4eacb6-14f1-472b-ba30-1242279f5990",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "7",
+      "name": "8ГК Мухамедханова",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    },
+    {
+      "id": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "Gruzin Cuisine ЦО",
+      "type": "CORPORATION"
+    },
+    {
+      "id": "5483afc8-8e46-4ce8-91d5-0cce4e2147c6",
+      "parentId": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "code": "10",
+      "name": "ГОЛОВНОЙ ОФИС",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "910527450078"
+    },
+    {
+      "id": "b60190ad-1561-4321-af82-3e3f37fdde84",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Акжан",
+      "type": "JURPERSON"
+    },
+    {
+      "id": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Амиржан",
+      "type": "JURPERSON"
+    },
+    {
+      "id": "945e983c-6830-4cda-891f-1e54dbb51e04",
+      "parentId": "e791bb73-6046-2451-019b-936d11400010",
+      "name": "ИП Шаяхметов",
+      "type": "JURPERSON"
+    },
+    {
+      "id": "6884c58f-8f89-469e-b2ca-d8fe2a2ec7e3",
+      "parentId": "c2115cb4-0442-4d62-8702-cc81fe85330f",
+      "code": "9",
+      "name": "ФАБРИКА",
+      "type": "DEPARTMENT",
+      "taxpayerIdNumber": "911231300089"
+    }
+  ]
+}

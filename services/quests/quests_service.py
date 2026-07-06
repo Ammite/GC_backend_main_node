@@ -330,14 +330,22 @@ def create_quest(
     Returns:
         Созданный квест (Reward)
     """
-    # Парсим дату
     try:
         target_date = datetime.strptime(quest_data.date, "%d.%m.%Y")
     except ValueError:
         target_date = datetime.now()
-    
+
     start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+    if quest_data.durationDate:
+        try:
+            end_dt = datetime.strptime(quest_data.durationDate, "%d.%m.%Y")
+        except ValueError:
+            end_dt = target_date
+    else:
+        end_dt = target_date
+
+    end_date = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
     
     # Находим блюдо по названию (unit)
     item = db.query(Item).filter(Item.name.ilike(f"%{quest_data.unit}%")).first()
@@ -410,42 +418,66 @@ def get_active_quests(
     db: Session,
     date: Optional[str] = None,
     organization_id: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    include_expired: bool = False,
 ) -> List[QuestResponse]:
     """
-    Получить список активных квестов
-    
+    Получить список активных квестов.
+
     Args:
         db: сессия БД
-        date: Дата в формате DD.MM.YYYY (по умолчанию сегодня)
-        organization_id: ID организации (фильтр)
-    
+        date: Дата в формате DD.MM.YYYY (по умолчанию сегодня). Используется,
+            если не передан интервал.
+        organization_id: ID организации (фильтр прогресса).
+        date_from / date_to: Интервал в формате DD.MM.YYYY. Если переданы,
+            возвращаются квесты, чей период `[start_date, end_date]` пересекает интервал.
+            Имеют приоритет над `date`.
+        include_expired: По умолчанию False — выкидываем уже истёкшие квесты
+            (для совместимости со старым `/quests/active`). Поставь True, чтобы
+            видеть все, попадающие в окно.
+
     Returns:
-        Список активных квестов
+        Список квестов.
     """
-    # Парсим дату
-    if date:
+    # Резолвим окно: либо явный интервал (date_from/date_to), либо одна date, либо «сегодня».
+    if date_from or date_to:
         try:
-            target_date = datetime.strptime(date, "%d.%m.%Y")
+            start_of_day = (
+                datetime.strptime(date_from, "%d.%m.%Y").replace(hour=0, minute=0, second=0, microsecond=0)
+                if date_from else datetime.min
+            )
         except ValueError:
-            target_date = datetime.now()
+            start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            end_of_day = (
+                datetime.strptime(date_to, "%d.%m.%Y").replace(hour=23, minute=59, second=59, microsecond=999999)
+                if date_to else datetime.max
+            )
+        except ValueError:
+            end_of_day = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)
     else:
-        target_date = datetime.now()
-    
-    start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        if date:
+            try:
+                target_date = datetime.strptime(date, "%d.%m.%Y")
+            except ValueError:
+                target_date = datetime.now()
+        else:
+            target_date = datetime.now()
+        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
     now = datetime.now()
-    # Сравниваем только даты (без времени) для проверки истечения
     today_date = now.date()
-    
-    # Получаем активные квесты (которые еще не истекли)
-    # Квест активен, если его expire_date (end_date) >= сегодняшней даты
-    query = db.query(Reward).filter(
-        and_(
-            Reward.start_date <= end_of_day,
-            Reward.end_date >= start_of_day,
-            func.date(Reward.end_date) >= today_date  # Еще не истекли (сравниваем только даты)
-        )
-    )
+
+    # Квест пересекается с окном: start_date <= end_of_day AND end_date >= start_of_day.
+    filters = [
+        Reward.start_date <= end_of_day,
+        Reward.end_date >= start_of_day,
+    ]
+    if not include_expired:
+        filters.append(func.date(Reward.end_date) >= today_date)
+    query = db.query(Reward).filter(and_(*filters))
     
     rewards = query.all()
     
@@ -516,14 +548,23 @@ def update_quest(
     if not reward:
         raise ValueError(f"Quest with id {quest_id} not found")
     
-    # Обновляем поля
     if quest_data.date:
         try:
             target_date = datetime.strptime(quest_data.date, "%d.%m.%Y")
-            start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-            reward.start_date = start_date
-            reward.end_date = end_date
+            reward.start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        except ValueError:
+            pass
+
+    if quest_data.durationDate:
+        try:
+            end_dt = datetime.strptime(quest_data.durationDate, "%d.%m.%Y")
+            reward.end_date = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+        except ValueError:
+            pass
+    elif quest_data.date and not quest_data.durationDate:
+        try:
+            target_date = datetime.strptime(quest_data.date, "%d.%m.%Y")
+            reward.end_date = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
         except ValueError:
             pass
     

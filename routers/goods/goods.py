@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from schemas.goods import GoodsArrayResponse
 import logging
 from services.goods import get_goods_by_categories
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="", tags=["goods"])
 @router.get("/goods", response_model=GoodsArrayResponse)
 def get_goods(
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить товары по категориям (Заготовки и их дочерние группы).

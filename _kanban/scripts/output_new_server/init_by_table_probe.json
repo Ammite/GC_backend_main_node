@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-05-28T15:32:23.117447",
+  "org": {
+    "id": 5,
+    "name": "1ГК Бокейхана",
+    "iiko_id_cloud": "5524d769-3ad2-4b38-bb22-09b656488503"
+  },
+  "tg": {
+    "id": 14,
+    "name": "Бокейхана 8",
+    "iiko_id": "111cb2c2-6591-45eb-8bcb-2d24710e36f0"
+  },
+  "table": {
+    "id": 82,
+    "num": 1,
+    "iiko_id": "21c88609-cfa5-4450-8c89-679586cd590c"
+  },
+  "init_request": {
+    "organizationId": "5524d769-3ad2-4b38-bb22-09b656488503",
+    "terminalGroupId": "111cb2c2-6591-45eb-8bcb-2d24710e36f0",
+    "tableIds": [
+      "21c88609-cfa5-4450-8c89-679586cd590c"
+    ]
+  },
+  "init_response": null,
+  "by_table_response": {
+    "correlationId": "df816d91-cf23-4e1c-b828-129b720c7cc7",
+    "orders": []
+  }
+}

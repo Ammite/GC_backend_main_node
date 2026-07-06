@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
 
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from schemas.warehouse import (
     SimpleWriteoffDocumentRequest,
@@ -50,7 +50,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def create_writeoff_document_endpoint(
     document_data: SimpleWriteoffDocumentRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать акт списания
@@ -223,7 +223,7 @@ async def create_writeoff_document_endpoint(
 async def create_incoming_invoice_endpoint(
     document_data: SimpleIncomingInvoiceRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать приходную накладную
@@ -383,7 +383,7 @@ async def create_incoming_invoice_endpoint(
 async def create_outgoing_invoice_endpoint(
     document_data: SimpleOutgoingInvoiceRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать расходную накладную
@@ -538,7 +538,7 @@ async def create_outgoing_invoice_endpoint(
 @router.get("/accounts", response_model=AccountsListResponse)
 async def get_accounts_endpoint(
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список всех счетов (accounts_list)
@@ -572,7 +572,7 @@ async def get_accounts_endpoint(
 async def create_inventory_endpoint(
     document_data: SimpleInventoryRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать инвентаризацию
@@ -708,7 +708,7 @@ async def create_inventory_endpoint(
 async def sync_pay_out_types_endpoint(
     include_deleted: bool = Query(default=False, description="Включать ли удаленные типы"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Синхронизировать типы изъятий/внесений из iiko API в локальную БД.
@@ -746,7 +746,7 @@ async def sync_pay_out_types_endpoint(
 async def get_pay_out_types_endpoint(
     include_deleted: bool = Query(default=False, description="Включать ли удаленные типы"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список типов изъятий/внесений из локальной БД.
@@ -777,7 +777,7 @@ async def get_payrolls_endpoint(
     date_to: str = Query(..., description="Окончание периода в формате yyyy-MM-dd, включительно"),
     department: Optional[str] = Query(default=None, description="UUID торгового предприятия"),
     include_deleted: bool = Query(default=False, description="Включать ли удаленные ведомости"),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список платежных ведомостей из iiko API
@@ -800,16 +800,23 @@ async def get_payrolls_endpoint(
     """
     try:
         # Валидация формата дат
+        from datetime import datetime
         try:
-            from datetime import datetime
-            datetime.strptime(date_from, "%Y-%m-%d")
-            datetime.strptime(date_to, "%Y-%m-%d")
+            _df = datetime.strptime(date_from, "%Y-%m-%d")
+            _dt = datetime.strptime(date_to, "%Y-%m-%d")
         except ValueError:
             raise HTTPException(
                 status_code=400,
                 detail="Даты должны быть в формате yyyy-MM-dd (например, 2025-01-15)"
             )
-        
+
+        # Защита от перегруза iiko: лимит памяти "открытого периода" — 65 дней.
+        if (_dt - _df).days > 60:
+            raise HTTPException(
+                status_code=400,
+                detail="Период между date_from и date_to не может превышать 60 дней (лимит iiko)."
+            )
+
         iiko_service = IikoService()
         payrolls = await iiko_service.get_payrolls(
             date_from=date_from,
@@ -838,7 +845,7 @@ async def create_pay_out_endpoint(
     pay_out_data: CreatePayOutRequest,
     organization_id: Optional[int] = Query(default=None, description="ID организации (опционально)"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать изъятие из кассы в iiko API

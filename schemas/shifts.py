@@ -26,6 +26,8 @@ class ShiftStatusResponse(BaseModel):
     shiftId: Optional[str] = None
     startTime: Optional[str] = None  # "HH:mm"
     elapsedTime: Optional[str] = None  # "HH:mm:ss"
+    sales_number: int = 0  # количество заказов официанта за текущую смену
+    sales_total: float = 0.0  # сумма заказов официанта за текущую смену
 
     class Config:
         from_attributes = True

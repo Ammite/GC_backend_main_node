@@ -28,6 +28,7 @@ class SalaryBreakdown(BaseModel):
     """Детализация зарплаты"""
     baseSalary: float
     percentage: float
+    percentAmount: float = 0.0  # сумма, начисленная с процента от продаж
     bonuses: List[BonusItem]
     penalties: List[PenaltyItem]
     questRewards: List[QuestRewardItem]

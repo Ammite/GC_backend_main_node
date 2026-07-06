@@ -1,15 +1,12 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, or_
+from sqlalchemy import and_, or_
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from models.employees import Employees
 from models.user import User
 from models.d_order import DOrder
-from models.penalty import Penalty
-from models.user_salary import UserSalary
-from models.user_reward import UserReward
-from models.rewards import Reward
-from models.item import Item
+from models.shifts import Shift
+from services.salary.waiter_percent_service import get_active_percent
 from schemas.salary import (
     SalaryResponse,
     SalaryBreakdown,
@@ -21,6 +18,21 @@ from schemas.quests import QuestResponse
 from services.quests.quests_service import get_waiter_quests
 from services.employees.employees_service import get_employee_summary
 
+SHIFT_FLAT_RATE = 3000.0  # фикс за смену
+
+
+def _resolve_employee_user(db: Session, waiter_id: int):
+    """waiter_id может быть Employee.id или User.id (фронт шлёт User.id)."""
+    employee = db.query(Employees).filter(Employees.id == waiter_id).first()
+    if employee:
+        user = db.query(User).filter(User.iiko_id == employee.iiko_id).first()
+        return employee, user
+    user = db.query(User).filter(User.id == waiter_id).first()
+    if not user or not user.iiko_id:
+        return None, None
+    employee = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
+    return employee, user
+
 
 def calculate_waiter_salary(
     db: Session,
@@ -28,93 +40,83 @@ def calculate_waiter_salary(
     date: str,
     organization_id: Optional[int] = None,
 ) -> Optional[SalaryResponse]:
-    """
-    Рассчитать зарплату официанта за день
-    
-    Args:
-        db: сессия БД
-        waiter_id: ID официанта (employee_id)
-        date: дата в формате "DD.MM.YYYY"
-        organization_id: ID организации (фильтр)
-    
-    Returns:
-        Информация о зарплате официанта
-    """
-    # Парсим дату
     try:
         target_date = datetime.strptime(date, "%d.%m.%Y")
     except ValueError:
         return None
-    
+
     start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
     end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-    
-    # Получаем сотрудника
-    employee = db.query(Employees).filter(Employees.id == waiter_id).first()
-    if not employee:
+
+    employee, user = _resolve_employee_user(db, waiter_id)
+    if not employee or not user:
         return None
-    
-    # Получаем пользователя
-    user = db.query(User).filter(User.iiko_id == employee.iiko_id).first()
-    if not user:
-        return None
-    
-    # Получаем заказы официанта за день
-    query = db.query(DOrder).filter(
-        and_(
-            DOrder.user_id == user.id,
-            DOrder.time_order >= start_of_day,
-            DOrder.time_order <= end_of_day,
-            DOrder.deleted == False
+
+    now = datetime.now()
+
+    # --- Смены, ОТКРЫТЫЕ в target_date (атрибуция по дате открытия) ---
+    # Закрытая смена засчитывается, если открыта в этот день.
+    # Открытая (end_time IS NULL) — только если открыта не в будущем и не
+    # старше 48ч (защита от забытых смен), см. salary_open_shift_window.
+    candidate_shifts = (
+        db.query(Shift)
+        .filter(
+            Shift.employee_id == employee.id,
+            Shift.start_time >= start_of_day,
+            Shift.start_time <= end_of_day,
         )
+        .all()
     )
-    
-    if organization_id:
-        query = query.filter(DOrder.organization_id == organization_id)
-    
-    orders = query.all()
-    
-    # Считаем количество завершенных столов (уникальных заказов)
-    tables_completed = len(orders)
-    
-    # Считаем общую выручку
-    total_revenue = sum(float(order.sum_order or 0) for order in orders)
-    
-    # Получаем процент зарплаты (из UserSalary или по умолчанию 5%)
-    user_salary_record = db.query(UserSalary).filter(UserSalary.user_id == user.id).first()
-    salary_percentage = 5.0  # По умолчанию 5%
-    
-    # Рассчитываем базовую зарплату (процент от выручки)
-    base_salary = total_revenue * (salary_percentage / 100)
-    
-    # Получаем штрафы за день (по user_id или employee_id)
-    penalties_query = db.query(Penalty).filter(
-        or_(
-            Penalty.user_id == user.id,
-            Penalty.employee_id == waiter_id
+    shifts_today = []
+    for s in candidate_shifts:
+        if s.end_time is None:
+            if s.start_time > now:
+                continue
+            if (now - s.start_time) > timedelta(hours=48):
+                continue
+        shifts_today.append(s)
+
+    base_salary = round(SHIFT_FLAT_RATE * len(shifts_today), 2)
+    worked = len(shifts_today) > 0
+
+    # --- Продажи внутри окна каждой смены ---
+    total_revenue = 0.0
+    tables_completed = 0
+    for s in shifts_today:
+        seg_start = s.start_time
+        seg_end = s.end_time if s.end_time is not None else now
+        if seg_end <= seg_start:
+            continue
+        orders_query = db.query(DOrder).filter(
+            and_(
+                DOrder.user_id == user.id,
+                DOrder.time_order >= seg_start,
+                DOrder.time_order <= seg_end,
+                DOrder.deleted == False,  # noqa: E712
+            )
         )
+        if organization_id:
+            orders_query = orders_query.filter(DOrder.organization_id == organization_id)
+        shift_orders = orders_query.all()
+        tables_completed += len(shift_orders)
+        total_revenue += sum(float(o.sum_order or 0) for o in shift_orders)
+
+    # --- Персональный процент с продаж ---
+    salary_percentage = 0.0
+    percent_amount = 0.0
+    if worked:
+        salary_percentage = get_active_percent(db, employee.id, target_date.date())
+        percent_amount = round(total_revenue * salary_percentage / 100.0, 2)
+
+    salary = round(base_salary + percent_amount, 2)
+
+    # --- Квесты (без изменений) ---
+    quests = get_waiter_quests(
+        db=db, waiter_id=waiter_id, date=date, organization_id=organization_id
     )
-    penalties = penalties_query.all()
-    
-    total_penalties = sum(float(penalty.penalty_sum or 0) for penalty in penalties)
-    
-    penalties_list = [
-        PenaltyItem(
-            reason=penalty.description or "Штраф",
-            amount=float(penalty.penalty_sum or 0),
-            date=date
-        )
-        for penalty in penalties
-    ]
-    
-    # Получаем квесты и награды за день
-    quests = get_waiter_quests(db=db, waiter_id=waiter_id, date=date, organization_id=organization_id)
-    
-    # Считаем бонусы за квесты
     quest_bonus = 0.0
     quest_rewards_list = []
     quest_description = ""
-    
     for quest in quests:
         if quest.completed:
             quest_bonus += quest.reward
@@ -122,61 +124,37 @@ def calculate_waiter_salary(
                 QuestRewardItem(
                     questId=quest.id,
                     questName=quest.description,
-                    reward=quest.reward
+                    reward=quest.reward,
                 )
             )
             if not quest_description:
                 quest_description = f"Бонус за выполнение квеста: {quest.description}"
-    
-    if not quest_description:
-        quest_description = "Бонус определенный сумма"
-    
-    # Дополнительные бонусы (можно расширить логику)
-    additional_bonuses = 0.0
-    bonuses_list = []
-    
-    # Пример: бонус за отличную работу (если выручка больше определенной суммы)
-    if total_revenue > 500000:
-        performance_bonus = total_revenue * 0.01  # 1% от выручки
-        additional_bonuses += performance_bonus
-        bonuses_list.append(
-            BonusItem(
-                type="performance",
-                amount=performance_bonus,
-                description="Бонус за отличную работу"
-            )
-        )
-    
-    total_bonuses = additional_bonuses
-    
-    # Итоговая зарплата
-    total_earnings = base_salary + total_bonuses + quest_bonus - total_penalties
-    
-    # Формируем детализацию
+
+    total_earnings = round(salary + quest_bonus, 2)
+
     breakdown = SalaryBreakdown(
         baseSalary=base_salary,
         percentage=salary_percentage,
-        bonuses=bonuses_list,
-        penalties=penalties_list,
-        questRewards=quest_rewards_list
+        percentAmount=percent_amount,
+        bonuses=[],
+        penalties=[],
+        questRewards=quest_rewards_list,
     )
-    
-    salary_response = SalaryResponse(
+
+    return SalaryResponse(
         date=date,
         tablesCompleted=tables_completed,
         totalRevenue=total_revenue,
-        salary=base_salary,
+        salary=salary,
         salaryPercentage=salary_percentage,
-        bonuses=total_bonuses,
+        bonuses=0.0,
         questBonus=quest_bonus,
         questDescription=quest_description,
-        penalties=total_penalties,
+        penalties=0.0,
         totalEarnings=total_earnings,
         breakdown=breakdown,
-        quests=quests
+        quests=quests,
     )
-    
-    return salary_response
 
 
 def get_waiter_daily_sales(

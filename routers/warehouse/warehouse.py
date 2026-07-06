@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional
-from utils.security import get_current_user
+from utils.security import get_current_user, require_role
 from database.database import get_db
 from services.warehouse.warehouse_service import (
     create_warehouse_document,
@@ -37,7 +37,7 @@ router = APIRouter(prefix="/warehouse", tags=["warehouse"])
 async def create_warehouse_document_endpoint(
     document_data: CreateWarehouseDocumentRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать новый складской документ (поступление, списание, приходная или расходная накладная)
@@ -154,7 +154,7 @@ async def get_warehouse_documents_endpoint(
     limit: int = Query(default=100, description="Лимит записей"),
     offset: int = Query(default=0, description="Смещение для пагинации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список складских документов с фильтрацией
@@ -179,7 +179,7 @@ async def get_warehouse_documents_endpoint(
 async def get_warehouse_document_detail_endpoint(
     document_id: int = Path(..., description="ID складского документа"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить детали складского документа по ID
@@ -201,7 +201,7 @@ async def update_warehouse_document_endpoint(
     document_id: int = Path(..., description="ID складского документа"),
     document_data: UpdateWarehouseDocumentRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Обновить складской документ
@@ -236,7 +236,7 @@ async def update_warehouse_document_endpoint(
 async def delete_warehouse_document_endpoint(
     document_id: int = Path(..., description="ID складского документа"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Удалить складской документ
@@ -258,7 +258,7 @@ async def delete_warehouse_document_endpoint(
 async def sync_warehouse_documents_endpoint(
     sync_data: SyncWarehouseDocumentsRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Владелец")),
 ):
     """
     Синхронизировать складские документы из iiko
@@ -302,6 +302,8 @@ async def sync_warehouse_documents_endpoint(
             updated=result.get("updated", 0),
             errors=result.get("errors", 0),
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error syncing warehouse documents: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
@@ -311,7 +313,7 @@ async def sync_warehouse_documents_endpoint(
 async def create_writeoff_document_endpoint(
     document_data: CreateWriteoffDocumentRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать акт списания в iiko API
@@ -399,7 +401,7 @@ async def get_balance_stores_endpoint(
         description="ID организации для фильтрации"
     ),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить остатки товаров по складам
@@ -450,7 +452,7 @@ async def get_balance_stores_endpoint(
 
 @router.get("/stores", response_model=StoresListResponse)
 async def get_stores_endpoint(
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Получить список всех складов из iiko Server API

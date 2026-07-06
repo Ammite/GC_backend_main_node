@@ -37,6 +37,7 @@ from .pay_out import PayOut
 from .department import Department
 from .task import Task
 from .payment_type import PaymentType
+from .waiter_sales_percent import WaiterSalesPercent
 
 __all__ = [
     "DOrder",
@@ -80,6 +81,7 @@ __all__ = [
     "Department",
     "Task",
     "PaymentType",
+    "WaiterSalesPercent",
 ]
 
 

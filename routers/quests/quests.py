@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, Query, HTTPException, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional
-from datetime import datetime
-from utils.security import get_current_user
+from datetime import datetime, timedelta
+from utils.security import get_current_user, require_role, require_self_or_role
 from database.database import get_db
 from services.quests.quests_service import (
     get_waiter_quests,
@@ -36,7 +36,7 @@ def get_waiter_quests_endpoint(
     date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_self_or_role("waiter_id", "Менеджер")),
 ):
     """
     Получить квесты официанта на определенную дату
@@ -65,7 +65,7 @@ def get_waiter_quests_endpoint(
 def create_quest_endpoint(
     quest_data: CreateQuestRequest,
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Создать новый квест (для CEO)
@@ -116,26 +116,42 @@ def create_quest_endpoint(
 
 @router.get("/quests/active", response_model=QuestsArrayResponse)
 def get_active_quests_endpoint(
-    date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (по умолчанию сегодня)"),
+    date: Optional[str] = Query(default=None, description="Дата в формате DD.MM.YYYY (legacy — одна дата)"),
     organization_id: Optional[int] = Query(default=None, description="ID организации для фильтрации"),
+    date_from: Optional[str] = Query(default=None, description="DD.MM.YYYY — нижняя граница окна (приоритет над date)"),
+    date_to: Optional[str] = Query(default=None, description="DD.MM.YYYY — верхняя граница окна (приоритет над date)"),
+    include_expired: bool = Query(default=False, description="Включать ли уже истёкшие квесты (для истории)"),
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
     """
-    Получить список активных квестов
-    
+    Получить список активных квестов (или истории — с `include_expired=true`).
+
     **Query Parameters:**
-    - `date` (optional): Дата в формате "DD.MM.YYYY" (по умолчанию сегодня)
-    - `organization_id` (optional): ID организации для фильтрации
-    
-    **Response:**
-    - Массив активных квестов с базовой информацией
+    - `date_from` / `date_to` (optional): DD.MM.YYYY — интервал по периоду квеста.
+      Если ни одна дата не задана — по умолчанию **последние 7 дней**.
+    - `date` (optional, legacy): одна дата — оставлено для обратной совместимости.
+    - `organization_id` (optional): ID организации для фильтрации прогресса.
+    - `include_expired` (optional, default false): по умолчанию выкидываем истёкшие квесты.
+      Поставь `true`, чтобы получить историю.
+
+    **Response:** массив квестов с базовой информацией и прогрессом.
     """
     try:
+        # Если фронт ничего не передал по датам — дефолт «последние 7 дней» + показываем истёкшие.
+        if not any([date, date_from, date_to]):
+            today = datetime.now().date()
+            date_to = today.strftime("%d.%m.%Y")
+            date_from = (today - timedelta(days=7)).strftime("%d.%m.%Y")
+            include_expired = True
+
         quests = get_active_quests(
             db=db,
             date=date,
-            organization_id=organization_id
+            organization_id=organization_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_expired=include_expired,
         )
         return QuestsArrayResponse(quests=quests)
     except Exception as e:
@@ -220,7 +236,7 @@ def update_quest_endpoint(
     quest_id: int = Path(..., description="ID квеста"),
     quest_data: UpdateQuestRequest = Body(...),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Изменить квест
@@ -299,7 +315,7 @@ def update_quest_endpoint(
 def delete_quest_endpoint(
     quest_id: int = Path(..., description="ID квеста"),
     db: Session = Depends(get_db),
-    user = Depends(get_current_user),
+    user = Depends(require_role("Менеджер")),
 ):
     """
     Удалить квест

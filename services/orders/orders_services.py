@@ -28,7 +28,105 @@ from services.iiko.iiko_service import IikoService, IikoApiType
 
 logger = logging.getLogger(__name__)
 
+
+def build_order_comment(waiter_name: Optional[str], user_comment: Optional[str]) -> str:
+    """
+    Собирает comment для iiko-заказа.
+
+    Официанта нельзя передать по Cloud API штатно, поэтому пишем его в комментарий:
+      «{ФИО} оформил с приложения[. {пользовательский комментарий}]».
+    Если имя официанта неизвестно — возвращаем пользовательский комментарий как есть.
+    """
+    name = (waiter_name or "").strip()
+    user_part = (user_comment or "").strip()
+    if not name:
+        return user_part
+    prefix = f"{name} оформил с приложения"
+    if user_part:
+        return f"{prefix}. {user_part}"
+    return prefix
+
+
 iiko_service = IikoService()
+
+# iikoFront автоматически добавляет 10% service charge на итог заказа.
+# Наша БД хранит «голую» sum_order — без сбора. При отправке оплаты в iiko
+# обязаны накинуть сбор, иначе iiko ответит PaymentSumNotEnough при close.
+IIKO_SERVICE_CHARGE_RATE = 0.10
+
+
+async def _poll_iiko_command(
+    db: Session,
+    order: DOrder,
+    iiko_response: Any,
+    org_cloud_id: str,
+    *,
+    command_label: str,
+    external_data_key: str,
+    timeout: float = 15.0,
+) -> Dict[str, Any]:
+    """
+    Поллит /api/1/commands/status по correlationId из iiko_response.
+    Записывает финальный state в order.external_data[external_data_key]['wait_result'].
+    Telegram-alert при Error/Timeout/TransportError шлёт сам wait_command.
+    Никогда не поднимает исключений.
+    """
+    if not isinstance(iiko_response, dict):
+        return {"state": "NoResponse"}
+    correlation_id = iiko_response.get("correlationId")
+    if not correlation_id:
+        return {"state": "NoCorrelationId"}
+    wait_result = await iiko_service.wait_command(
+        organization_id=org_cloud_id,
+        correlation_id=correlation_id,
+        command_label=command_label,
+        timeout=timeout,
+    )
+    if order.external_data is None:
+        order.external_data = {}
+    bucket = order.external_data.setdefault(external_data_key, {})
+    bucket["wait_result"] = {
+        "state": wait_result.get("state"),
+        "exception": wait_result.get("exception"),
+    }
+    flag_modified(order, "external_data")
+    db.commit()
+    db.refresh(order)
+    return wait_result
+
+
+def _resolve_waiter(db: Session, waiter_id_raw):
+    """
+    Резолвит waiterId, который фронт может прислать как:
+      - User.id (текущий контракт — `app/waiter/newOrder.tsx`),
+      - Employee.id,
+      - Employee.iiko_id (числовое, например магическое 322256 для тестового аккаунта).
+
+    Возвращает (Employee | None, User | None).
+    """
+    if waiter_id_raw is None:
+        return None, None
+
+    # 1. Как User.id → найти Employee через iiko_id.
+    user = db.query(User).filter(User.id == waiter_id_raw).first()
+    if user and user.iiko_id:
+        employee = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
+        if employee:
+            return employee, user
+
+    # 2. Как Employee.id напрямую.
+    employee = db.query(Employees).filter(Employees.id == waiter_id_raw).first()
+    if employee:
+        user_for_emp = db.query(User).filter(User.iiko_id == employee.iiko_id).first()
+        return employee, user_for_emp
+
+    # 3. Как Employee.iiko_id (преобразуем к строке, потому что iiko_id хранится как String(50)).
+    employee = db.query(Employees).filter(Employees.iiko_id == str(waiter_id_raw)).first()
+    if employee:
+        user_for_emp = db.query(User).filter(User.iiko_id == employee.iiko_id).first()
+        return employee, user_for_emp
+
+    return None, None
 
 
 @cached(ttl_seconds=300, key_prefix="orders")  # Кэш на 5 минут
@@ -345,15 +443,13 @@ def create_order_from_app(
                 f"(table.section_id={table_obj.section_id})"
             )
     
-    # Валидация и преобразование waiterId (принимаем user id, ищем employee через iiko_id)
+    # Валидация и преобразование waiterId — фронт исторически может прислать что угодно
+    # из (User.id, Employee.id, Employee.iiko_id-как-int). Берём первое попавшееся.
     waiter_iiko_id = None
     if data.waiterId:
-        user = db.query(User).filter(User.id == data.waiterId).first()
-        if not user:
-            raise ValueError(f"User with id {data.waiterId} not found")
-        waiter = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
+        waiter, _ = _resolve_waiter(db, data.waiterId)
         if not waiter:
-            raise ValueError(f"Employee for user {data.waiterId} not found (no matching iiko_id)")
+            raise ValueError(f"Waiter not found by waiterId={data.waiterId} (tried User.id / Employee.id / Employee.iiko_id)")
         waiter_iiko_id = waiter.iiko_id
     
     # Валидация и преобразование позиций (productId -> iiko_id)
@@ -506,6 +602,28 @@ async def create_order_in_iiko(
 
         items = order.items or []
 
+        ext = order.external_data or {}
+        table_iiko_id = ext.get("tableIikoId")
+        waiter_iiko_id = ext.get("waiterIikoId")
+
+        # Имя официанта для комментария: официанта нельзя передать штатно по API,
+        # поэтому пишем «{ФИО} оформил с приложения» в comment.
+        waiter_name = None
+        if waiter_iiko_id:
+            waiter_emp = (
+                db.query(Employees)
+                .filter(Employees.iiko_id == str(waiter_iiko_id))
+                .first()
+            )
+            if waiter_emp:
+                waiter_name = waiter_emp.name
+
+        # --- ДИАГНОСТИКА: куда iiko принимает comment у зального заказа? ---
+        # Один и тот же текст шлём в три места с разными метками [ORDER]/[ROOT]/[ITEM],
+        # чтобы по iikoFront понять, какое поле iiko реально показывает.
+        # TODO: после выяснения убрать лишние места и метки.
+        base_comment = build_order_comment(waiter_name, comment)
+
         iiko_items: List[Dict[str, Any]] = []
         for item in items:
             if not item.get("productIikoId"):
@@ -513,24 +631,24 @@ async def create_order_in_iiko(
                     f"Пропуск позиции без productIikoId при отправке в iiko: {item}"
                 )
                 continue
+            user_item_comment = (item.get("comment") or "").strip()
+            item_comment = f"{base_comment} [ITEM]"
+            if user_item_comment:
+                item_comment = f"{user_item_comment}. {item_comment}"
             iiko_items.append(
                 {
                     "productId": item["productIikoId"],
                     "type": "Product",
                     "amount": item["amount"],
                     "price": item["price"],
-                    "comment": item.get("comment") or "",
+                    "comment": item_comment,
                 }
             )
-
-        ext = order.external_data or {}
-        table_iiko_id = ext.get("tableIikoId")
-        waiter_iiko_id = ext.get("waiterIikoId")
 
         order_body: Dict[str, Any] = {
             "externalNumber": str(order.id),
             "phone": None,
-            "comment": comment or "",
+            "comment": f"{base_comment} [ORDER]",
             "guests": {
                 "count": guests or 0,
             },
@@ -552,6 +670,8 @@ async def create_order_in_iiko(
             "createOrderSettings": {
                 "servicePrint": True,
             },
+            # ДИАГНОСТИКА: пробуем comment в корне payload (вне order) — см. base_comment выше
+            "comment": f"{base_comment} [ROOT]",
         }
 
         logger.info(f"Отправка заказа {order.id} в iiko Cloud: {iiko_order_payload}")
@@ -598,6 +718,13 @@ async def create_order_in_iiko(
         flag_modified(order, "external_data")
         db.commit()
         db.refresh(order)
+
+        await _poll_iiko_command(
+            db, order, iiko_response,
+            org_cloud_id=org_cloud_id,
+            command_label="order/create",
+            external_data_key="iiko_create_order",
+        )
 
         return {
             "correlationId": correlation_id,
@@ -655,6 +782,13 @@ async def close_order_in_iiko(db: Session, order: DOrder, pay_data=None) -> Dict
         flag_modified(order, "external_data")
         db.commit()
         db.refresh(order)
+
+        await _poll_iiko_command(
+            db, order, iiko_response,
+            org_cloud_id=org_cloud_id,
+            command_label="order/close",
+            external_data_key="iiko_close_order",
+        )
 
         return iiko_response if isinstance(iiko_response, dict) else {}
     except Exception as e:
@@ -728,6 +862,13 @@ async def cancel_order_in_iiko(
         db.commit()
         db.refresh(order)
 
+        await _poll_iiko_command(
+            db, order, iiko_response,
+            org_cloud_id=org_cloud_id,
+            command_label="order/cancel",
+            external_data_key="iiko_cancel_order",
+        )
+
         return iiko_response if isinstance(iiko_response, dict) else {}
     except Exception as e:
         logger.error(
@@ -737,20 +878,102 @@ async def cancel_order_in_iiko(
         return {}
 
 
+def _resolve_payments_for_order(
+    db: Session,
+    order: DOrder,
+    pay_data: Any,
+    org_cloud_id: str,
+    context_label: str,
+) -> List[Dict[str, Any]]:
+    """
+    Резолвит payment types из pay_data в список iiko-payment dict'ов.
+
+    Поддерживает оба варианта фронт-полей:
+      1. paymentType: 8           — одиночный int (наш internal id)
+      2. paymentTypes: [{...}]    — массив объектов с iiko_id/payment_type_kind
+
+    Валидирует что PaymentType принадлежит организации заказа через
+    `organization_iiko_ids` (NULL = доступен всем, иначе должен содержать org_cloud_id).
+
+    Если резолвилось несколько — sum делится поровну. Фронт пока не передаёт
+    sum per item (TODO в схеме PayOrderRequest).
+
+    Используется и change_payments_in_iiko и add_payments_in_iiko.
+    """
+    resolved: List[tuple] = []
+
+    def _pt_belongs_to_org(pt_row: PaymentType) -> bool:
+        if pt_row.organization_iiko_ids is None:
+            return True
+        return org_cloud_id in (pt_row.organization_iiko_ids or [])
+
+    single_id = getattr(pay_data, "paymentType", None)
+    if single_id is not None:
+        pt_row = db.query(PaymentType).filter(PaymentType.id == single_id).first()
+        if not pt_row:
+            logger.warning(
+                f"{context_label} [{order.id}]: paymentType id={single_id} не найден в БД"
+            )
+        elif not pt_row.iiko_id:
+            logger.warning(
+                f"{context_label} [{order.id}]: paymentType id={single_id} найден, но без iiko_id"
+            )
+        elif not _pt_belongs_to_org(pt_row):
+            logger.warning(
+                f"{context_label} [{order.id}]: paymentType id={single_id} "
+                f"({pt_row.name!r}) не принадлежит организации {org_cloud_id} — пропускаем"
+            )
+        else:
+            resolved.append((pt_row.iiko_id, pt_row.payment_type_kind or "Cash"))
+
+    for pt in (getattr(pay_data, "paymentTypes", None) or []):
+        if not pt.iiko_id:
+            continue
+        pt_row = db.query(PaymentType).filter(PaymentType.iiko_id == pt.iiko_id).first()
+        if pt_row and not _pt_belongs_to_org(pt_row):
+            logger.warning(
+                f"{context_label} [{order.id}]: paymentType iiko_id={pt.iiko_id} "
+                f"({pt_row.name!r}) не принадлежит организации {org_cloud_id} — пропускаем"
+            )
+            continue
+        resolved.append((pt.iiko_id, pt.payment_type_kind or "Cash"))
+
+    if not resolved:
+        return []
+
+    raw_sum = float(order.sum_order) if order.sum_order else 0.0
+    total_sum = round(raw_sum * (1 + IIKO_SERVICE_CHARGE_RATE), 2)
+    if len(resolved) > 1:
+        logger.warning(
+            f"{context_label} [{order.id}]: получено {len(resolved)} типов оплат, "
+            f"делим сумму {total_sum} поровну (raw={raw_sum}, +{IIKO_SERVICE_CHARGE_RATE*100:.0f}% service charge)"
+        )
+    per_payment = round(total_sum / len(resolved), 2)
+
+    return [
+        {
+            "paymentTypeKind": kind,
+            "sum": per_payment,
+            "paymentTypeId": iiko_id,
+            "isProcessedExternally": True,
+        }
+        for iiko_id, kind in resolved
+    ]
+
+
 async def change_payments_in_iiko(
     db: Session,
     order: DOrder,
     pay_data: Any,
 ) -> Dict[str, Any]:
     """
-    Асинхронно установить оплаты на открытом iiko-заказе через
-    POST /api/1/order/change_payments.
+    Сценарий 2 (заказ создан на iikoFront-кассе → подобран через init_by_table):
+    устанавливаем оплаты массивом через POST /api/1/order/change_payments.
 
-    Должно вызываться ПЕРЕД close_order_in_iiko, иначе iiko закроет заказ
-    без оплат и в iikoFront он будет выглядеть «не пробит».
+    Для сценария 1 (заказ создан через /order/create) используется
+    add_payments_in_iiko — это рекомендация iiko (task 9.2).
 
-    pay_data — объект PayOrderRequest с полем paymentTypes (List[PayOrderPaymentType]).
-    Если у заказа нет iiko_id или нет paymentTypes — ничего не делает.
+    Должно вызываться ПЕРЕД close_order_in_iiko.
     """
     if order.iiko_id is None:
         logger.warning(
@@ -774,64 +997,15 @@ async def change_payments_in_iiko(
             logger.error(f"Организация {org.id} не имеет iiko_id")
             return {}
 
-        # Резолвим список типов оплат в единый формат:
-        #   [(iiko_id, payment_type_kind), ...]
-        # Поддерживаем оба варианта от фронта:
-        #   1. paymentType: 8           — одиночный int (наш internal id)
-        #   2. paymentTypes: [{...}]    — массив объектов с iiko_id/payment_type_kind
-        resolved: List[tuple] = []
-
-        single_id = getattr(pay_data, "paymentType", None)
-        if single_id is not None:
-            pt_row = db.query(PaymentType).filter(PaymentType.id == single_id).first()
-            if not pt_row:
-                logger.warning(
-                    f"change_payments для заказа {order.id}: paymentType id={single_id} "
-                    f"не найден в БД"
-                )
-            elif not pt_row.iiko_id:
-                logger.warning(
-                    f"change_payments для заказа {order.id}: paymentType id={single_id} "
-                    f"найден, но без iiko_id"
-                )
-            else:
-                resolved.append((pt_row.iiko_id, pt_row.payment_type_kind or "Cash"))
-
-        for pt in (getattr(pay_data, "paymentTypes", None) or []):
-            if pt.iiko_id:
-                resolved.append((pt.iiko_id, pt.payment_type_kind or "Cash"))
-
-        if not resolved:
+        payments_payload = _resolve_payments_for_order(
+            db, order, pay_data, org_cloud_id, "change_payments"
+        )
+        if not payments_payload:
             logger.warning(
                 f"change_payments пропущен для заказа {order.id}: "
                 f"не удалось собрать ни одного валидного paymentType"
             )
             return {}
-
-        # Локально для совместимости с дальнейшим кодом
-        valid_types = resolved
-
-        total_sum = float(order.sum_order) if order.sum_order else 0.0
-        # Если резолвили несколько типов оплаты — делим сумму поровну.
-        # Это упрощение: фронт сейчас не передаёт sum per item. TODO: расширить
-        # схему PayOrderRequest, чтобы фронт мог явно указывать sum по каждой оплате.
-        if len(valid_types) > 1:
-            logger.warning(
-                f"change_payments для заказа {order.id}: получено "
-                f"{len(valid_types)} типов оплат, делим сумму {total_sum} поровну"
-            )
-        per_payment = total_sum / len(valid_types) if valid_types else 0.0
-
-        payments_payload: List[Dict[str, Any]] = []
-        for iiko_id, kind in valid_types:
-            payments_payload.append(
-                {
-                    "paymentTypeKind": kind,
-                    "sum": per_payment,
-                    "paymentTypeId": iiko_id,
-                    "isProcessedExternally": True,
-                }
-            )
 
         payload: Dict[str, Any] = {
             "organizationId": org_cloud_id,
@@ -856,10 +1030,135 @@ async def change_payments_in_iiko(
         db.commit()
         db.refresh(order)
 
+        await _poll_iiko_command(
+            db, order, iiko_response,
+            org_cloud_id=org_cloud_id,
+            command_label="order/change_payments",
+            external_data_key="iiko_change_payments",
+        )
+
         return iiko_response if isinstance(iiko_response, dict) else {}
     except Exception as e:
         logger.error(
             f"Ошибка при change_payments для заказа {order.id}: {e}",
+            exc_info=True,
+        )
+        return {}
+
+
+async def add_payments_in_iiko(
+    db: Session,
+    order: DOrder,
+    pay_data: Any,
+) -> Dict[str, Any]:
+    """
+    Сценарий 1 (заказ создан через /order/create): шлём оплаты по одной
+    через POST /api/1/order/add_payment.
+
+    iiko рекомендует именно add_payment для заказов, открытых API-пользователем
+    (task 9.2). change_payments для этого сценария может «не сходиться» —
+    исторически это давало невидимые расхождения отчётов.
+
+    Возвращает агрегат:
+      {"success": all-payments-passed, "added": N, "total": M, "responses": [...]}
+    """
+    if order.iiko_id is None:
+        logger.warning(
+            f"add_payments пропущен для заказа {order.id}: iiko_id отсутствует"
+        )
+        return {}
+
+    if not pay_data:
+        logger.warning(
+            f"add_payments пропущен для заказа {order.id}: pay_data пустой"
+        )
+        return {}
+
+    try:
+        org = db.query(Organization).filter(Organization.id == order.organization_id).first()
+        if not org:
+            logger.error(f"Организация для заказа {order.id} не найдена")
+            return {}
+        org_cloud_id = org.iiko_id_cloud or org.iiko_id
+        if not org_cloud_id:
+            logger.error(f"Организация {org.id} не имеет iiko_id")
+            return {}
+
+        payments = _resolve_payments_for_order(
+            db, order, pay_data, org_cloud_id, "add_payments"
+        )
+        if not payments:
+            logger.warning(
+                f"add_payments пропущен для заказа {order.id}: "
+                f"не удалось собрать ни одного валидного paymentType"
+            )
+            return {}
+
+        if order.external_data is None:
+            order.external_data = {}
+        order.external_data.setdefault("iiko_add_payments", {"calls": []})
+        calls_log = order.external_data["iiko_add_payments"]["calls"]
+
+        responses: List[Dict[str, Any]] = []
+        success_count = 0
+
+        for idx, payment in enumerate(payments, start=1):
+            label = f"order/add_payment#{idx}/{len(payments)}"
+            payload = {
+                "organizationId": org_cloud_id,
+                "orderId": order.iiko_id,
+                "payment": payment,
+            }
+            logger.info(f"{label} для заказа {order.id} в iiko Cloud: {payload}")
+
+            iiko_response = await iiko_service._make_request(
+                api_type=IikoApiType.CLOUD,
+                endpoint="/api/1/order/add_payment",
+                method="POST",
+                data=payload,
+            )
+
+            logger.info(f"Ответ iiko /api/1/order/add_payment для заказа {order.id} #{idx}: {iiko_response}")
+
+            correlation_id = None
+            if isinstance(iiko_response, dict):
+                correlation_id = iiko_response.get("correlationId")
+
+            wait_result: Dict[str, Any] = {"state": "NoCorrelationId"}
+            if correlation_id:
+                wait_result = await iiko_service.wait_command(
+                    organization_id=org_cloud_id,
+                    correlation_id=correlation_id,
+                    command_label=label,
+                )
+
+            call_entry = {
+                "idx": idx,
+                "paymentTypeId": payment.get("paymentTypeId"),
+                "sum": payment.get("sum"),
+                "correlationId": correlation_id,
+                "wait_state": wait_result.get("state"),
+            }
+            if wait_result.get("exception"):
+                call_entry["exception"] = wait_result["exception"]
+            calls_log.append(call_entry)
+            flag_modified(order, "external_data")
+            db.commit()
+            db.refresh(order)
+
+            responses.append({"response": iiko_response, "wait": wait_result})
+            if wait_result.get("state") == "Success":
+                success_count += 1
+
+        return {
+            "success": success_count == len(payments),
+            "added": success_count,
+            "total": len(payments),
+            "responses": responses,
+        }
+    except Exception as e:
+        logger.error(
+            f"Ошибка при add_payments для заказа {order.id}: {e}",
             exc_info=True,
         )
         return {}
@@ -943,6 +1242,13 @@ async def add_items_to_iiko_order(
         flag_modified(order, "external_data")
         db.commit()
         db.refresh(order)
+
+        await _poll_iiko_command(
+            db, order, iiko_response,
+            org_cloud_id=org_cloud_id,
+            command_label="order/add_items",
+            external_data_key="iiko_add_items",
+        )
 
         return iiko_response if isinstance(iiko_response, dict) else {}
     except Exception as e:
@@ -1156,12 +1462,9 @@ def update_order(
         order.external_data["comment"] = data.comment
     
     if data.waiterId is not None:
-        user = db.query(User).filter(User.id == data.waiterId).first()
-        if not user:
-            raise ValueError(f"User with id {data.waiterId} not found")
-        waiter = db.query(Employees).filter(Employees.iiko_id == user.iiko_id).first()
+        waiter, _ = _resolve_waiter(db, data.waiterId)
         if not waiter:
-            raise ValueError(f"Employee for user {data.waiterId} not found (no matching iiko_id)")
+            raise ValueError(f"Waiter not found by waiterId={data.waiterId} (tried User.id / Employee.id / Employee.iiko_id)")
         if order.external_data is None:
             order.external_data = {}
         order.external_data["waiterId"] = data.waiterId

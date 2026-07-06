@@ -61,23 +61,13 @@ def _recalculate_metrics_for_date(
     context: str = "sync"
 ) -> None:
     """
-    Пересчитать дневные метрики за конкретную дату:
-    глобально (organization_id=None) + по каждой организации отдельно.
+    Пересчитать дневные метрики за конкретную дату по каждой организации отдельно.
+
+    Глобальный (organization_id=None) пересчёт удалён — иначе метрика хранится и на уровне
+    NULL-строки, и на уровне per-org строк, и чтение без org-фильтра даёт удвоение.
+    Глобальный итог получается суммированием per-org строк на стороне читателя.
     """
     org_ids = _get_all_organization_ids(db)
-
-    # Глобальный пересчёт (без фильтра по организации)
-    try:
-        recalculate_daily_metrics_for_date(db, metric_date)
-        logger.debug(f"Пересчитаны глобальные дневные метрики за {metric_date} ({context})")
-    except Exception as agg_err:
-        logger.error(f"Ошибка пересчёта глобальных дневных метрик за {metric_date} ({context}): {agg_err}")
-
-    try:
-        recalculate_daily_employee_metrics_for_date(db, metric_date)
-        logger.debug(f"Пересчитаны глобальные метрики по сотрудникам за {metric_date} ({context})")
-    except Exception as emp_err:
-        logger.error(f"Ошибка пересчёта глобальных метрик по сотрудникам за {metric_date} ({context}): {emp_err}")
 
     # Пересчёт по каждой организации
     for org_id in org_ids:
@@ -1962,11 +1952,28 @@ class IikoSync:
             
             # Парсим данные
             parsed_data = self.parser.parse_shifts(shifts_data)
-            
+
+            # Дедуп по iiko_id: iiko возвращает одну смену в обеих дневных выгрузках,
+            # если она пересекает полночь — без дедупа bulk commit ловит UniqueViolation
+            seen_ids: set = set()
+            deduped: list = []
+            for s in parsed_data:
+                iid = s.get("iiko_id")
+                if not iid or iid in seen_ids:
+                    continue
+                seen_ids.add(iid)
+                deduped.append(s)
+            if len(deduped) != len(parsed_data):
+                logger.info(
+                    f"Дедуп смен: {len(parsed_data)} → {len(deduped)} "
+                    f"(удалено {len(parsed_data) - len(deduped)} дубликатов между днями)"
+                )
+            parsed_data = deduped
+
             created = 0
             updated = 0
             errors = 0
-            
+
             for shift_data in parsed_data:
                 try:
                     iiko_id = shift_data.get("iiko_id")

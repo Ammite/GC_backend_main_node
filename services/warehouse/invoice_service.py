@@ -577,11 +577,29 @@ async def create_outgoing_invoice_in_iiko(
                 "iiko_id": None,
                 "document_id": None
             }
-        
+
+        # Явная проверка iiko-валидации: если iiko вернул valid=false — НЕ коммитим в БД.
+        # Без этой проверки ошибка iiko молча проглатывалась, документ в нашу БД попадал, в iiko — нет.
+        if isinstance(iiko_response, dict) and iiko_response.get("valid") is False:
+            error_msg = (
+                iiko_response.get("errorMessage")
+                or iiko_response.get("error")
+                or iiko_response.get("message")
+                or "iiko вернул valid=false"
+            )
+            logger.warning(
+                f"iiko отклонил расходную накладную: {error_msg} | response={iiko_response}"
+            )
+            return {
+                "success": False,
+                "message": f"iiko отклонил расходную накладную: {error_msg}",
+                "iiko_id": None,
+                "document_id": None,
+            }
+
         # Извлекаем ID созданного документа из ответа
         iiko_id = None
         if isinstance(iiko_response, dict):
-            # Для расходной накладной ответ приходит в формате валидации (как для приходной)
             if iiko_response.get("valid", False):
                 # Если документ валиден, но id нет в ответе, используем documentNumber как идентификатор
                 document_number = iiko_response.get("documentNumber")
@@ -594,9 +612,21 @@ async def create_outgoing_invoice_in_iiko(
                     iiko_id = response_data.get("id") or response_data.get("documentId")
                 elif isinstance(response_data, list) and response_data:
                     iiko_id = response_data[0].get("id") or response_data[0].get("documentId")
-        
+
+        # Если iiko НЕ подтвердил создание (нет ни iiko_id, ни явного valid=true) — не сохраняем локально.
+        if not iiko_id and not (isinstance(iiko_response, dict) and iiko_response.get("valid") is True):
+            logger.warning(
+                f"iiko не подтвердил создание расходной накладной (нет id и нет valid=true): {iiko_response}"
+            )
+            return {
+                "success": False,
+                "message": "iiko не подтвердил создание расходной накладной (нет id и нет valid=true)",
+                "iiko_id": None,
+                "document_id": None,
+            }
+
         if not iiko_id:
-            logger.warning(f"Не удалось извлечь iiko_id из ответа: {iiko_response}")
+            logger.info(f"iiko_id не пришёл, но valid=true — сохраняем по documentNumber. response={iiko_response}")
         
         # Всегда используем фиксированные значения для сохранения в БД
         store_iiko_id_for_db = DEFAULT_STORE_IIKO_ID

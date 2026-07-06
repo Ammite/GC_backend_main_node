@@ -45,40 +45,51 @@ class FileCacheManager:
     
     def get(self, key: str, function_name: str) -> Optional[Any]:
         """Получить значение из кэша"""
-        cache_path = self._get_cache_path(key, function_name)
-        
+        try:
+            cache_path = self._get_cache_path(key, function_name)
+        except OSError as e:
+            logger.warning(f"Не удалось получить путь кеша {function_name}:{key[:16]}...: {e}")
+            return None
+
         if not cache_path.exists():
             logger.debug(f"Cache MISS: {function_name}:{key[:16]}...")
             return None
-        
+
         try:
             with open(cache_path, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
-            
+
             # Проверяем TTL
             expires_at = datetime.fromisoformat(cache_data['expires_at'])
             if datetime.now() >= expires_at:
                 logger.debug(f"Cache EXPIRED: {function_name}:{key[:16]}...")
-                cache_path.unlink()  # Удаляем устаревший кеш
+                try:
+                    cache_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
                 return None
-            
+
             logger.debug(f"Cache HIT: {function_name}:{key[:16]}...")
             return cache_data['value']
-        
+
         except (json.JSONDecodeError, KeyError, ValueError, OSError) as e:
             logger.warning(f"Ошибка чтения кеша {cache_path}: {e}")
             # Удаляем поврежденный файл
             try:
-                if cache_path.exists():
-                    cache_path.unlink()
+                cache_path.unlink(missing_ok=True)
             except OSError:
                 pass
             return None
     
     def set(self, key: str, function_name: str, value: Any, ttl_seconds: int = 300):
         """Сохранить значение в кэш с TTL"""
-        cache_path = self._get_cache_path(key, function_name)
-        
+        try:
+            cache_path = self._get_cache_path(key, function_name)
+        except OSError as e:
+            logger.warning(f"Не удалось получить путь кеша {function_name}:{key[:16]}...: {e}")
+            return
+
+        temp_path = cache_path.with_suffix('.tmp')
         try:
             cache_data = {
                 'value': value,
@@ -86,79 +97,117 @@ class FileCacheManager:
                 'expires_at': (datetime.now() + timedelta(seconds=ttl_seconds)).isoformat(),
                 'ttl_seconds': ttl_seconds
             }
-            
+
             # Сохраняем во временный файл, затем переименовываем (атомарная операция)
-            temp_path = cache_path.with_suffix('.tmp')
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=2)
-            
+
             temp_path.replace(cache_path)
             logger.debug(f"Cache SET: {function_name}:{key[:16]}... (TTL: {ttl_seconds}s)")
-        
+
         except Exception as e:
             logger.error(f"Ошибка сохранения кеша {cache_path}: {e}")
             # Удаляем временный файл при ошибке
-            if temp_path.exists():
-                temp_path.unlink()
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
     
     def invalidate(self, key: str, function_name: str):
         """Инвалидировать конкретный ключ"""
-        cache_path = self._get_cache_path(key, function_name)
-        if cache_path.exists():
-            cache_path.unlink()
+        try:
+            cache_path = self._get_cache_path(key, function_name)
+            cache_path.unlink(missing_ok=True)
             logger.debug(f"Cache INVALIDATE: {function_name}:{key[:16]}...")
-    
+        except OSError as e:
+            logger.warning(f"Ошибка инвалидации кеша {function_name}: {e}")
+
     def invalidate_function(self, function_name: str):
         """Инвалидировать весь кеш функции"""
         func_dir = self.cache_dir / function_name
-        if func_dir.exists():
-            count = 0
+        if not func_dir.exists():
+            return
+        count = 0
+        try:
             for cache_file in func_dir.glob("*.json"):
-                cache_file.unlink()
-                count += 1
-            logger.info(f"Cache INVALIDATE FUNCTION: {function_name} ({count} files)")
-    
+                try:
+                    cache_file.unlink(missing_ok=True)
+                    count += 1
+                except OSError:
+                    pass
+        except OSError:
+            pass
+        logger.info(f"Cache INVALIDATE FUNCTION: {function_name} ({count} files)")
+
     def invalidate_pattern(self, pattern: str):
         """Инвалидировать все ключи, содержащие паттерн"""
         count = 0
-        for func_dir in self.cache_dir.iterdir():
-            if func_dir.is_dir():
-                for cache_file in func_dir.glob("*.json"):
-                    try:
-                        with open(cache_file, 'r', encoding='utf-8') as f:
-                            cache_data = json.load(f)
-                            # Проверяем содержимое кеша на паттерн
-                            cache_str = json.dumps(cache_data.get('value', {}))
-                            if pattern in cache_str:
-                                cache_file.unlink()
-                                count += 1
-                    except Exception:
-                        pass
+        try:
+            for func_dir in self.cache_dir.iterdir():
+                if not func_dir.is_dir():
+                    continue
+                try:
+                    for cache_file in func_dir.glob("*.json"):
+                        try:
+                            with open(cache_file, 'r', encoding='utf-8') as f:
+                                cache_data = json.load(f)
+                                cache_str = json.dumps(cache_data.get('value', {}))
+                                if pattern in cache_str:
+                                    try:
+                                        cache_file.unlink(missing_ok=True)
+                                        count += 1
+                                    except OSError:
+                                        pass
+                        except Exception:
+                            pass
+                except OSError:
+                    pass
+        except OSError:
+            pass
         logger.info(f"Cache INVALIDATE PATTERN: {pattern} ({count} files)")
-    
+
     def cleanup_expired(self):
         """Удалить устаревшие записи из кэша"""
         now = datetime.now()
         count = 0
-        
-        for func_dir in self.cache_dir.iterdir():
-            if func_dir.is_dir():
-                for cache_file in func_dir.glob("*.json"):
+
+        try:
+            func_dirs = list(self.cache_dir.iterdir())
+        except OSError:
+            return
+
+        for func_dir in func_dirs:
+            if not func_dir.is_dir():
+                continue
+            try:
+                cache_files = list(func_dir.glob("*.json"))
+            except OSError:
+                continue
+            for cache_file in cache_files:
+                should_remove = False
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    expires_at = datetime.fromisoformat(cache_data['expires_at'])
+                    if now >= expires_at:
+                        should_remove = True
+                except FileNotFoundError:
+                    # Файл уже удалил другой процесс
+                    continue
+                except Exception:
+                    # Поврежденный файл — удаляем
+                    should_remove = True
+
+                if should_remove:
                     try:
-                        with open(cache_file, 'r', encoding='utf-8') as f:
-                            cache_data = json.load(f)
-                            expires_at = datetime.fromisoformat(cache_data['expires_at'])
-                            if now >= expires_at:
-                                cache_file.unlink()
-                                count += 1
-                    except Exception:
-                        # Удаляем поврежденные файлы
-                        cache_file.unlink()
+                        cache_file.unlink(missing_ok=True)
                         count += 1
-        
+                    except OSError:
+                        pass
+
         if count > 0:
             logger.debug(f"Cache CLEANUP: {count} expired files removed")
-    
+
     def get_stats(self) -> dict:
         """Получить статистику по кешу"""
         total_files = 0
@@ -166,24 +215,36 @@ class FileCacheManager:
         expired_files = 0
         total_size = 0
         now = datetime.now()
-        
-        for func_dir in self.cache_dir.iterdir():
-            if func_dir.is_dir():
-                for cache_file in func_dir.glob("*.json"):
-                    total_files += 1
+
+        try:
+            func_dirs = list(self.cache_dir.iterdir())
+        except OSError:
+            func_dirs = []
+
+        for func_dir in func_dirs:
+            if not func_dir.is_dir():
+                continue
+            try:
+                cache_files = list(func_dir.glob("*.json"))
+            except OSError:
+                continue
+            for cache_file in cache_files:
+                try:
                     total_size += cache_file.stat().st_size
-                    
-                    try:
-                        with open(cache_file, 'r', encoding='utf-8') as f:
-                            cache_data = json.load(f)
-                            expires_at = datetime.fromisoformat(cache_data['expires_at'])
-                            if now < expires_at:
-                                valid_files += 1
-                            else:
-                                expired_files += 1
-                    except Exception:
+                except OSError:
+                    continue
+                total_files += 1
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                    expires_at = datetime.fromisoformat(cache_data['expires_at'])
+                    if now < expires_at:
+                        valid_files += 1
+                    else:
                         expired_files += 1
-        
+                except Exception:
+                    expired_files += 1
+
         return {
             "total_files": total_files,
             "valid_files": valid_files,
@@ -251,26 +312,41 @@ def file_cached(ttl_seconds: int = 300, key_prefix: str = ""):
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Очищаем устаревшие записи периодически (каждый 10-й вызов)
+            # Очищаем устаревшие записи периодически (каждый 10-й вызов).
+            # Любой сбой здесь не должен ронять запрос.
             import random
             if random.randint(1, 10) == 1:
-                file_cache_manager.cleanup_expired()
-            
+                try:
+                    file_cache_manager.cleanup_expired()
+                except Exception as e:
+                    logger.warning(f"cleanup_expired failed: {e}")
+
             # Генерируем ключ кэша
-            cache_key = generate_cache_key(*args, **kwargs)
-            full_key = f"{key_prefix}:{cache_key}" if key_prefix else cache_key
-            
-            # Проверяем кеш
-            cached_value = file_cache_manager.get(full_key, func.__name__)
+            try:
+                cache_key = generate_cache_key(*args, **kwargs)
+                full_key = f"{key_prefix}:{cache_key}" if key_prefix else cache_key
+            except Exception as e:
+                logger.warning(f"generate_cache_key failed for {func.__name__}: {e} — кеш пропущен")
+                return func(*args, **kwargs)
+
+            # Проверяем кеш — отказ кеша не должен ломать запрос
+            try:
+                cached_value = file_cache_manager.get(full_key, func.__name__)
+            except Exception as e:
+                logger.warning(f"cache.get failed for {func.__name__}: {e}")
+                cached_value = None
             if cached_value is not None:
                 return cached_value
-            
+
             # Вызываем функцию и кэшируем результат
             result = func(*args, **kwargs)
-            file_cache_manager.set(full_key, func.__name__, result, ttl_seconds)
-            
+            try:
+                file_cache_manager.set(full_key, func.__name__, result, ttl_seconds)
+            except Exception as e:
+                logger.warning(f"cache.set failed for {func.__name__}: {e}")
+
             return result
-        
+
         return wrapper
     return decorator
 

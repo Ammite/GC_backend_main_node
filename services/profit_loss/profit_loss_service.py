@@ -8,6 +8,7 @@ from schemas.profit_loss import (
     ExpenseByType,
     ProfitLossDetailResponse,
     ProfitLossDetailByOrg,
+    ProfitLossDetailTransaction,
 )
 from services.transactions_and_statistics.statistics_service import (
     parse_date,
@@ -173,12 +174,48 @@ async def get_profit_loss_report(
     )
 
 
+def _get_transaction_details(
+    db: Session,
+    account_name: str,
+    start_date,
+    end_date,
+    org_id: int,
+) -> list[ProfitLossDetailTransaction]:
+    """Получить список транзакций для конкретного счёта и организации."""
+    rows = (
+        db.query(
+            Transaction.comment,
+            Transaction.date_typed,
+            Transaction.sum_resigned,
+        )
+        .filter(
+            Transaction.account_name == account_name,
+            Transaction.organization_id == org_id,
+            Transaction.date_typed >= start_date,
+            Transaction.date_typed <= end_date,
+            Transaction.is_active == True,  # noqa: E712
+        )
+        .order_by(Transaction.date_typed.desc())
+        .all()
+    )
+    return [
+        ProfitLossDetailTransaction(
+            comment=row.comment,
+            date=row.date_typed.strftime("%d.%m.%Y") if row.date_typed else None,
+            amount=round(float(abs(row.sum_resigned or 0)), 2),
+            name=None,
+        )
+        for row in rows
+    ]
+
+
 def get_profit_loss_detail(
     db: Session,
     item_id: str,
     item_type: str,
     date_from: str,
     date_to: str,
+    organization_id: Optional[int] = None,
 ) -> ProfitLossDetailResponse:
     """
     Детализация статьи P&L по организациям (точкам).
@@ -188,24 +225,23 @@ def get_profit_loss_detail(
         item_type: "revenue" или "expense"
         date_from: начало периода DD.MM.YYYY
         date_to: конец периода DD.MM.YYYY
+        organization_id: ID организации для фильтрации (опционально)
     """
     start_date = datetime.strptime(date_from, "%d.%m.%Y").date()
     end_date = datetime.strptime(date_to, "%d.%m.%Y").date()
 
-    organizations = (
-        db.query(Organization)
-        .filter(Organization.is_active == True)  # noqa: E712
-        .all()
-    )
+    org_query = db.query(Organization).filter(Organization.is_active == True)  # noqa: E712
+    if organization_id is not None:
+        org_query = org_query.filter(Organization.id == organization_id)
+    organizations = org_query.all()
 
     by_organization = []
     total = 0.0
     item_name = item_id
 
     if item_type == "revenue":
-        # Определяем metric_key и имя
         if item_id.startswith("revenue_other_income:"):
-            # Динамическая категория OTHER_INCOME
+            # Динамическая категория OTHER_INCOME — берётся из транзакций, показываем details
             account_name = item_id.split(":", 1)[1]
             item_name = account_name
             for org in organizations:
@@ -214,16 +250,18 @@ def get_profit_loss_detail(
                 )
                 amount = round(float(subkeys.get(account_name, 0)), 2)
                 if amount != 0:
+                    details = _get_transaction_details(db, account_name, start_date, end_date, org.id)
                     by_organization.append(
                         ProfitLossDetailByOrg(
                             organization_id=org.id,
                             organization_name=org.name,
                             amount=amount,
+                            details=details,
                         )
                     )
                     total += amount
         else:
-            # Стандартные категории дохода
+            # Стандартные категории дохода (из sales) — details не нужен
             reverse_map = {v: k for k, v in REVENUE_CATEGORY_TO_METRIC_KEY.items()}
             item_name = reverse_map.get(item_id, item_id)
             for org in organizations:
@@ -295,17 +333,21 @@ def get_profit_loss_detail(
             account_name = item_id.split(":", 1)[1]
             item_name = account_name
             # Запрос транзакций по account_name с группировкой по organization_id
+            base_filter = [
+                Transaction.account_name == account_name,
+                Transaction.date_typed >= start_date,
+                Transaction.date_typed <= end_date,
+                Transaction.is_active == True,  # noqa: E712
+            ]
+            if organization_id is not None:
+                base_filter.append(Transaction.organization_id == organization_id)
+
             rows = (
                 db.query(
                     Transaction.organization_id,
                     func.sum(func.abs(func.coalesce(Transaction.sum_resigned, 0))).label("total"),
                 )
-                .filter(
-                    Transaction.account_name == account_name,
-                    Transaction.date_typed >= start_date,
-                    Transaction.date_typed <= end_date,
-                    Transaction.is_active == True,  # noqa: E712
-                )
+                .filter(*base_filter)
                 .group_by(Transaction.organization_id)
                 .all()
             )
@@ -313,11 +355,13 @@ def get_profit_loss_detail(
             for row in rows:
                 amount = round(float(row.total or 0), 2)
                 if amount != 0:
+                    details = _get_transaction_details(db, account_name, start_date, end_date, row.organization_id)
                     by_organization.append(
                         ProfitLossDetailByOrg(
                             organization_id=row.organization_id,
                             organization_name=org_map.get(row.organization_id, "Неизвестно"),
                             amount=amount,
+                            details=details,
                         )
                     )
                     total += amount

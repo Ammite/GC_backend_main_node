@@ -41,11 +41,20 @@ class ProfitLossResponse(BaseModel):
         from_attributes = True
 
 
+class ProfitLossDetailTransaction(BaseModel):
+    """Одна транзакция в детализации"""
+    comment: Optional[str] = None
+    date: Optional[str] = None
+    amount: float = 0.0
+    name: Optional[str] = None  # ФИО создателя (пока не заполняется)
+
+
 class ProfitLossDetailByOrg(BaseModel):
     """Детализация по одной организации"""
     organization_id: int
     organization_name: str
     amount: float
+    details: Optional[List[ProfitLossDetailTransaction]] = None
 
 
 class ProfitLossDetailResponse(BaseModel):
